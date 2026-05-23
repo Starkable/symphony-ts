@@ -84,7 +84,7 @@ export class WorkspaceHookError extends Error {
     this.stderr = input.stderr ?? "";
   }
 }
-
+// hooks运行方法
 export class WorkspaceHookRunner {
   readonly #config: WorkspaceHookRunnerConfig;
   readonly #execute: HookCommandExecutor;

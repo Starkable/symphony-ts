@@ -95,6 +95,7 @@ export class RuntimeHostStartupError extends Error {
   }
 }
 
+// 这个应该是管理器，是循环调用看板查看任务。
 export class OrchestratorRuntimeHost implements DashboardServerHost {
   private config: ResolvedWorkflowConfig;
 
@@ -122,37 +123,51 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private readonly snapshotListeners = new Set<() => void>();
 
+  // 构造函数：构造函数
   constructor(options: RuntimeHostOptions) {
+    // 配置：配置
     this.config = options.config;
+    // 任务类：任务类
     this.tracker = options.tracker;
+    // 现在：现在
     this.now = options.now ?? (() => new Date());
+    // 日志记录器：日志记录器
     this.logger = options.logger ?? null;
+    // 工作空间管理器：工作空间管理器
     this.workspaceManager =
       options.workspaceManager ??
       createWorkspaceManagerFromConfig(options.config, this.logger);
+    // 事件处理：事件处理
     this.agentEventSink = (event) => {
+      // 事件处理：事件处理
       void this.enqueue(async () => {
+        // 事件处理：事件处理
         this.orchestrator.onCodexEvent({
           issueId: event.issueId,
           event,
         });
+        // 日志记录器：日志记录器
         await logAgentEvent(this.logger, event);
       });
     };
+    // 管理代理运行器：管理代理运行器
     this.managesAgentRunner =
       options.agentRunner === undefined &&
       options.createAgentRunner === undefined;
+    // 代理运行器：代理运行器
     this.agentRunner =
       options.agentRunner ??
       options.createAgentRunner?.({
         onEvent: this.agentEventSink,
       }) ??
+      // 创建管理代理运行器：创建管理代理运行器
       this.createManagedAgentRunner({
         config: options.config,
         tracker: options.tracker,
         workspaceManager: this.workspaceManager,
       });
 
+    // 创建定时器调度器：创建定时器调度器
     const timerScheduler = createQueuedTimerScheduler({
       run: (callback) => {
         void this.enqueue(async () => {
@@ -161,6 +176,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       },
     });
 
+    // 调度器选项：调度器选项
     const orchestratorOptions: OrchestratorCoreOptions = {
       config: options.config,
       tracker: options.tracker,
@@ -446,10 +462,13 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
   }
 }
 
+// 启动运行时服务：启动运行时服务
 export async function startRuntimeService(
   options: RuntimeServiceOptions,
 ): Promise<RuntimeServiceHandle> {
+  // 验证配置：验证配置
   const validation = validateDispatchConfig(options.config);
+  // 如果配置验证不通过，则抛出错误
   if (!validation.ok) {
     throw new RuntimeHostStartupError(
       validation.error.message,
@@ -457,17 +476,22 @@ export async function startRuntimeService(
     );
   }
 
+  // 创建日志记录器：创建日志记录器
   const logger =
     options.logger ??
     (await createRuntimeLogger({
       logsRoot: options.logsRoot ?? null,
       ...(options.stdout === undefined ? {} : { stdout: options.stdout }),
     }));
+  // 当前配置：当前配置
   let currentConfig = options.config;
+  // 创建linear任务类
   let tracker = options.tracker ?? createLinearTrackerFromConfig(currentConfig);
+  // 创建工作空间管理器：创建工作空间管理器
   let workspaceManager =
     options.workspaceManager ??
     createWorkspaceManagerFromConfig(currentConfig, logger);
+  // 这个应该是管理器，是循环调用看板查看任务。
   const runtimeHost =
     options.runtimeHost ??
     new OrchestratorRuntimeHost({
@@ -480,6 +504,7 @@ export async function startRuntimeService(
   const usesManagedTracker = options.tracker === undefined;
   const usesManagedWorkspaceManager = options.workspaceManager === undefined;
 
+  // 清理已解决的问题、任务
   await cleanupTerminalIssueWorkspaces({
     tracker,
     terminalStates: currentConfig.tracker.terminalStates,
@@ -487,7 +512,9 @@ export async function startRuntimeService(
     logger,
   });
 
+  // 启动仪表盘：启动仪表盘
   const dashboard =
+    // 如果端口为空，则返回null
     currentConfig.server.port === null
       ? null
       : await startDashboardServer({
@@ -498,31 +525,45 @@ export async function startRuntimeService(
           liveUpdatesEnabled: currentConfig.observability.dashboardEnabled,
         });
 
+  // 创建停止控制器：创建停止控制器
   const stopController = new AbortController();
+  // 创建退出承诺：创建退出承诺
   const exitPromise = createExitPromise();
+  // 轮询定时器：轮询定时器
   let pollTimer: NodeJS.Timeout | null = null;
+  // 正在关闭：正在关闭
   let shuttingDown = false;
 
+  // 调度下一个轮询：调度下一个轮询
   const scheduleNextPoll = () => {
+    // 如果停止控制器已中止，则返回
     if (stopController.signal.aborted) {
       return;
     }
 
+    // 设置轮询定时器：设置轮询定时器
     pollTimer = setTimeout(() => {
+      // 运行轮询周期：运行轮询周期
       void runPollCycle();
     }, currentConfig.polling.intervalMs);
   };
 
+  // 运行轮询周期：运行轮询周期
   const runPollCycle = async () => {
     try {
       const result = await runtimeHost.pollOnce();
+      // 记录轮询结果：记录轮询结果
       await logPollCycleResult(logger, result);
+      // 调度下一个轮询：调度下一个轮询
       scheduleNextPoll();
     } catch (error) {
+      // 记录轮询失败：记录轮询失败
       await logger.error("runtime_poll_failed", toErrorMessage(error), {
         error_code: ERROR_CODES.cliStartupFailed,
       });
+      // 解决退出：解决退出
       resolveExit(exitPromise, 1);
+      // 关闭：关闭
       void shutdown();
     }
   };
@@ -536,19 +577,25 @@ export async function startRuntimeService(
   };
 
   const removeSignalHandlers = installSignalHandlers(onSignal);
+  // 创建工作流监视器：创建工作流监视器
   const workflowWatcher =
+    // 如果工作流监视器为空，则创建工作流监视器
     options.workflowWatcher === undefined
+      // 创建工作流监视器：创建工作流监视器
       ? await createRuntimeWorkflowWatcher({
           config: currentConfig,
           logger,
           onReload: async (nextConfig) => {
+            // 上一个配置：上一个配置
             const previousConfig = currentConfig;
             currentConfig = nextConfig;
 
+            // 如果使用管理跟踪器，则创建线性跟踪器
             if (usesManagedTracker) {
               tracker = createLinearTrackerFromConfig(nextConfig);
             }
 
+            // 如果使用管理工作空间管理器，则创建工作空间管理器
             if (usesManagedWorkspaceManager) {
               workspaceManager = createWorkspaceManagerFromConfig(
                 nextConfig,
@@ -556,18 +603,22 @@ export async function startRuntimeService(
               );
             }
 
+            // 更新运行时主机配置：更新运行时主机配置
             runtimeHost.updateConfig({
               config: nextConfig,
               ...(usesManagedTracker ? { tracker } : {}),
               ...(usesManagedWorkspaceManager ? { workspaceManager } : {}),
             });
 
+            // 如果轮询定时器不为空，则清除轮询定时器
             if (pollTimer !== null) {
               clearTimeout(pollTimer);
               pollTimer = null;
+              // 调度下一个轮询：调度下一个轮询
               scheduleNextPoll();
             }
 
+            // 如果仪表盘不为空，则更新仪表盘端口
             if (
               dashboard !== null &&
               previousConfig.server.port !== nextConfig.server.port
@@ -583,6 +634,7 @@ export async function startRuntimeService(
               );
             }
 
+            // 如果仪表盘不为空，则更新仪表盘可见性
             if (
               dashboard !== null &&
               previousConfig.observability.dashboardEnabled !==
@@ -603,12 +655,15 @@ export async function startRuntimeService(
       : options.workflowWatcher;
   workflowWatcher?.start();
 
+  // 关闭：关闭
   const shutdown = async () => {
+    // 如果正在关闭，则返回
     if (shuttingDown) {
       await exitPromise.closed;
       return;
     }
     shuttingDown = true;
+    // 解决退出：解决退出
     resolveExit(exitPromise, 0);
     stopController.abort();
 
@@ -760,6 +815,7 @@ async function cleanupTerminalIssueWorkspaces(input: {
   }
 }
 
+// 创建linear任务类
 function createLinearTrackerFromConfig(
   config: ResolvedWorkflowConfig,
 ): LinearTrackerClient {
@@ -771,6 +827,7 @@ function createLinearTrackerFromConfig(
   });
 }
 
+// 创建工作区间管理
 function createWorkspaceManagerFromConfig(
   config: ResolvedWorkflowConfig,
   logger?: StructuredLogger | null,

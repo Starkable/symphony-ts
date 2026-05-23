@@ -58,16 +58,26 @@ export interface LinearTrackerClientOptions {
   fetchFn?: typeof fetch;
 }
 
+// 线性跟踪器客户端：线性跟踪器客户端
 export class LinearTrackerClient implements IssueTracker {
+  // 端点：端点 
   private readonly endpoint: string;
+  //  API密钥：API密钥
   private readonly apiKey: string | null;
+  // 项目Slug：项目Slug
   private readonly projectSlug: string | null;
+  // 活跃状态：活跃状态
   private readonly activeStates: string[];
+  // 页面大小：页面大小
   private readonly pageSize: number;
+  // 网络超时时间：网络超时时间
   private readonly networkTimeoutMs: number;
+  // 获取函数：获取函数
   private readonly fetchFn: typeof fetch;
 
+  // 构造函数：构造函数
   constructor(options: LinearTrackerClientOptions) {
+    // 端点：端点
     this.endpoint = options.endpoint;
     this.apiKey = options.apiKey;
     this.projectSlug = options.projectSlug;

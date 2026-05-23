@@ -72,7 +72,7 @@ export class WorkspaceManager {
       );
     }
   }
-
+// 清空问题
   async removeForIssue(issueId: string): Promise<boolean> {
     const { workspacePath } = this.resolveForIssue(issueId);
 
@@ -149,6 +149,7 @@ export class WorkspaceManager {
   }
 }
 
+// 
 function isHookRunner(
   value: WorkspaceManagerOptions["hooks"],
 ): value is WorkspaceHookRunner {

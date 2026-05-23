@@ -27,15 +27,20 @@ export function resolveWorkflowPath(workflowPath?: string): string {
   return resolve(process.cwd(), WORKFLOW_FILENAME);
 }
 
+// 加载工作流定义：从文件中读取工作流定义
 export async function loadWorkflowDefinition(
   workflowPath?: string,
 ): Promise<WorkflowDefinition & { workflowPath: string }> {
+  // 解析工作流路径：如果工作流路径为空，则使用默认的工作流路径
   const resolvedWorkflowPath = resolveWorkflowPath(workflowPath);
+  // 读取工作流内容：从文件中读取工作流内容
 
   let content: string;
+  // 读取工作流内容：如果文件不存在，则抛出错误
   try {
     content = await readFile(resolvedWorkflowPath, "utf8");
   } catch (error) {
+    // 如果文件不存在，则抛出错误
     const errorCode =
       error instanceof Error &&
       "code" in error &&
@@ -51,17 +56,20 @@ export async function loadWorkflowDefinition(
     });
   }
 
+  // 解析工作流内容：解析工作流内容，即将文本转成内部对象
   const workflow = parseWorkflowContent(content, resolvedWorkflowPath);
+  // 返回工作流定义
   return {
-    ...workflow,
-    workflowPath: resolvedWorkflowPath,
+    ...workflow, // 工作流定义
+    workflowPath: resolvedWorkflowPath, // 工作流路径
   };
 }
-
+// 解析工作流内容：解析工作流内容
 export function parseWorkflowContent(
   content: string,
   workflowPath = WORKFLOW_FILENAME,
 ): WorkflowDefinition {
+  // 如果工作流内容不以---开头，则返回工作流定义
   if (!content.startsWith("---")) {
     return {
       config: {},
@@ -69,12 +77,14 @@ export function parseWorkflowContent(
     };
   }
 
+  // 分割前言：分割前言
   const frontMatterResult = splitFrontMatter(content, workflowPath);
+  // 解析YAML前言：解析YAML前言
   const parsedConfig = parseYamlFrontMatter(
     frontMatterResult.frontMatter,
     workflowPath,
   );
-
+  // 返回工作流定义
   return {
     config: parsedConfig,
     promptTemplate: frontMatterResult.body.trim(),
