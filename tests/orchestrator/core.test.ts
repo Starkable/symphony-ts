@@ -12,6 +12,10 @@ import type {
   IssueStateSnapshot,
   IssueTracker,
 } from "../../src/tracker/tracker.js";
+import {
+  DEFAULT_TEST_CODEX_CONFIG,
+  withHarnessConfig,
+} from "../helpers/workflow-config.js";
 
 describe("orchestrator core", () => {
   it("sorts dispatch candidates by priority, age, and identifier", () => {
@@ -542,7 +546,12 @@ function createConfig(overrides?: {
   agent?: Partial<ResolvedWorkflowConfig["agent"]>;
   codex?: Partial<ResolvedWorkflowConfig["codex"]>;
 }): ResolvedWorkflowConfig {
-  return {
+  const codex = {
+    ...DEFAULT_TEST_CODEX_CONFIG,
+    ...overrides?.codex,
+  };
+
+  return withHarnessConfig({
     workflowPath: "/tmp/WORKFLOW.md",
     promptTemplate: "Prompt",
     tracker: {
@@ -573,16 +582,7 @@ function createConfig(overrides?: {
       maxConcurrentAgentsByState: {},
       ...overrides?.agent,
     },
-    codex: {
-      command: "codex-app-server",
-      approvalPolicy: "never",
-      threadSandbox: null,
-      turnSandboxPolicy: null,
-      turnTimeoutMs: 300_000,
-      readTimeoutMs: 30_000,
-      stallTimeoutMs: 300_000,
-      ...overrides?.codex,
-    },
+    codex,
     server: {
       port: null,
     },
@@ -591,7 +591,7 @@ function createConfig(overrides?: {
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
-  };
+  });
 }
 
 function createIssue(overrides?: Partial<Issue>): Issue {

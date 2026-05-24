@@ -24,6 +24,19 @@ export const DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE = Object.freeze(
 ) as Readonly<Record<string, number>>;
 
 export const DEFAULT_CODEX_COMMAND = "codex app-server";
+export const DEFAULT_CURSOR_COMMAND = "agent";
+export const DEFAULT_CURSOR_MODE = "agent";
+export const DEFAULT_CURSOR_OUTPUT_FORMAT = "text";
+export const DEFAULT_CURSOR_REUSE_POLICY = "per_issue" as const;
+export const DEFAULT_CURSOR_TURN_TIMEOUT_MS = 3_600_000;
+/** Default on: unattended orchestration expects auto-approved tool calls. */
+export const DEFAULT_CURSOR_YOLO = true;
+/** Default on: align with unattended runs; set false if CLI rejects --trust. */
+export const DEFAULT_CURSOR_TRUST = true;
+export const DEFAULT_CURSOR_TURN_LOG_ENABLED = true;
+export const DEFAULT_CURSOR_TURN_LOG_MAX_BYTES = 32_768;
+export const DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT = false;
+export const DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT = true;
 export const DEFAULT_TURN_TIMEOUT_MS = 3_600_000;
 export const DEFAULT_READ_TIMEOUT_MS = 5_000;
 export const DEFAULT_STALL_TIMEOUT_MS = 300_000;
@@ -55,6 +68,7 @@ export const SPEC_DEFAULTS = Object.freeze({
     timeoutMs: DEFAULT_HOOK_TIMEOUT_MS,
   },
   agent: {
+    harness: "codex",
     maxConcurrentAgents: DEFAULT_MAX_CONCURRENT_AGENTS,
     maxTurns: DEFAULT_MAX_TURNS,
     maxRetryBackoffMs: DEFAULT_MAX_RETRY_BACKOFF_MS,

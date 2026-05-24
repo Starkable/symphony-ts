@@ -13,6 +13,7 @@ import {
   shouldRunAsCli,
 } from "../../src/cli/main.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
+import { withHarnessConfig } from "../helpers/workflow-config.js";
 
 describe("cli", () => {
   it("parses the workflow path and CLI override flags", () => {
@@ -221,7 +222,18 @@ describe("cli", () => {
 function createConfig(
   overrides: Partial<ResolvedWorkflowConfig> = {},
 ): ResolvedWorkflowConfig {
-  return {
+  const codex = {
+    command: "codex app-server",
+    approvalPolicy: null,
+    threadSandbox: null,
+    turnSandboxPolicy: null,
+    turnTimeoutMs: 3_600_000,
+    readTimeoutMs: 5_000,
+    stallTimeoutMs: 300_000,
+    ...overrides.codex,
+  };
+
+  return withHarnessConfig({
     workflowPath: "/repo/WORKFLOW.md",
     promptTemplate: "Prompt",
     tracker: {
@@ -250,24 +262,20 @@ function createConfig(
       maxTurns: 20,
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
-    },
-    codex: {
-      command: "codex app-server",
-      approvalPolicy: null,
-      threadSandbox: null,
-      turnSandboxPolicy: null,
-      turnTimeoutMs: 3_600_000,
-      readTimeoutMs: 5_000,
-      stallTimeoutMs: 300_000,
+      ...overrides.agent,
     },
     server: {
       port: null,
+      ...overrides.server,
     },
     observability: {
       dashboardEnabled: true,
       refreshMs: 1_000,
       renderIntervalMs: 16,
+      ...overrides.observability,
     },
     ...overrides,
-  };
+    codex,
+    harnesses: overrides.harnesses,
+  });
 }

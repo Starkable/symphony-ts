@@ -3,8 +3,11 @@ import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Writable } from "node:stream";
 
-import type { AgentRunResult, AgentRunnerEvent } from "../agent/runner.js";
-import { AgentRunner } from "../agent/runner.js";
+import { mapAgentRunnerEventToHarnessAgentEvent } from "../agent/backends/codex/codex-event-adapter.js";
+import type { AgentHarness, AgentHarnessLike } from "../agent/harness/agent-harness.js";
+import { createAgentHarness } from "../agent/harness/harness-factory.js";
+import type { HarnessAgentEvent, HarnessRunResult } from "../agent/harness/types.js";
+import type { AgentRunnerEvent } from "../agent/runner.js";
 import { validateDispatchConfig } from "../config/config-resolver.js";
 import type { ResolvedWorkflowConfig } from "../config/types.js";
 import { WorkflowWatcher } from "../config/workflow-watch.js";
@@ -36,21 +39,19 @@ import type {
 } from "./core.js";
 import { OrchestratorCore } from "./core.js";
 
-export interface AgentRunnerLike {
-  run(input: {
-    issue: Issue;
-    attempt: number | null;
-    signal?: AbortSignal;
-  }): Promise<AgentRunResult>;
-}
+export interface AgentRunnerLike extends AgentHarnessLike {}
 
 export interface RuntimeHostOptions {
   config: ResolvedWorkflowConfig;
   tracker: IssueTracker;
-  agentRunner?: AgentRunnerLike;
+  agentHarness?: AgentHarnessLike;
+  agentRunner?: AgentHarnessLike;
+  createAgentHarness?: (input: {
+    onEvent: (event: HarnessAgentEvent) => void;
+  }) => AgentHarnessLike;
   createAgentRunner?: (input: {
     onEvent: (event: AgentRunnerEvent) => void;
-  }) => AgentRunnerLike;
+  }) => AgentHarnessLike;
   logger?: StructuredLogger;
   workspaceManager?: WorkspaceManager;
   now?: () => Date;
@@ -82,7 +83,7 @@ interface WorkerExecution {
   controller: AbortController;
   completion: Promise<void>;
   stopRequest: StopRequest | null;
-  lastResult: AgentRunResult | null;
+  lastResult: HarnessRunResult | null;
 }
 
 export class RuntimeHostStartupError extends Error {
@@ -103,7 +104,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private workspaceManager: WorkspaceManager;
 
-  private agentRunner: AgentRunnerLike;
+  private agentHarness: AgentHarnessLike;
 
   private readonly now: () => Date;
 
@@ -113,9 +114,9 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private readonly orchestrator: OrchestratorCore;
 
-  private readonly managesAgentRunner: boolean;
+  private readonly managesAgentHarness: boolean;
 
-  private readonly agentEventSink: (event: AgentRunnerEvent) => void;
+  private readonly harnessEventSink: (event: HarnessAgentEvent) => void;
 
   private eventQueue: Promise<unknown> = Promise.resolve();
 
@@ -138,30 +139,32 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       options.workspaceManager ??
       createWorkspaceManagerFromConfig(options.config, this.logger);
     // 事件处理：事件处理
-    this.agentEventSink = (event) => {
-      // 事件处理：事件处理
+    this.harnessEventSink = (event) => {
       void this.enqueue(async () => {
-        // 事件处理：事件处理
-        this.orchestrator.onCodexEvent({
+        this.orchestrator.onHarnessRuntimeEvent({
           issueId: event.issueId,
           event,
         });
-        // 日志记录器：日志记录器
-        await logAgentEvent(this.logger, event);
+        await logHarnessEvent(this.logger, event);
       });
     };
-    // 管理代理运行器：管理代理运行器
-    this.managesAgentRunner =
+    this.managesAgentHarness =
+      options.agentHarness === undefined &&
       options.agentRunner === undefined &&
+      options.createAgentHarness === undefined &&
       options.createAgentRunner === undefined;
-    // 代理运行器：代理运行器
-    this.agentRunner =
+    this.agentHarness =
+      options.agentHarness ??
       options.agentRunner ??
-      options.createAgentRunner?.({
-        onEvent: this.agentEventSink,
+      options.createAgentHarness?.({
+        onEvent: this.harnessEventSink,
       }) ??
-      // 创建管理代理运行器：创建管理代理运行器
-      this.createManagedAgentRunner({
+      options.createAgentRunner?.({
+        onEvent: (event) => {
+          this.harnessEventSink(mapAgentRunnerEventToHarnessAgentEvent(event));
+        },
+      }) ??
+      this.createManagedAgentHarness({
         config: options.config,
         tracker: options.tracker,
         workspaceManager: this.workspaceManager,
@@ -219,8 +222,8 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
     this.orchestrator.updateConfig(input.config);
 
-    if (this.managesAgentRunner) {
-      this.agentRunner = this.createManagedAgentRunner({
+    if (this.managesAgentHarness) {
+      this.agentHarness = this.createManagedAgentHarness({
         config: this.config,
         tracker: this.tracker,
         workspaceManager: this.workspaceManager,
@@ -228,8 +231,8 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       return;
     }
 
-    if (supportsConfigUpdate(this.agentRunner)) {
-      this.agentRunner.updateConfig({
+    if (supportsConfigUpdate(this.agentHarness)) {
+      this.agentHarness.updateConfig({
         config: this.config,
         ...(input.tracker === undefined ? {} : { tracker: this.tracker }),
         ...(input.workspaceManager === undefined
@@ -339,7 +342,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       completion: Promise.resolve(),
     };
 
-    const completion = this.agentRunner
+    const completion = this.agentHarness
       .run({
         issue,
         attempt,
@@ -448,16 +451,17 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     }
   }
 
-  private createManagedAgentRunner(input: {
+  private createManagedAgentHarness(input: {
     config: ResolvedWorkflowConfig;
     tracker: IssueTracker;
     workspaceManager: WorkspaceManager;
-  }): AgentRunnerLike {
-    return new AgentRunner({
+  }): AgentHarness {
+    return createAgentHarness({
       config: input.config,
       tracker: input.tracker,
       workspaceManager: input.workspaceManager,
-      onEvent: this.agentEventSink,
+      logger: this.logger,
+      onEvent: this.harnessEventSink,
     });
   }
 }
@@ -534,7 +538,7 @@ export async function startRuntimeService(
   // 正在关闭：正在关闭
   let shuttingDown = false;
 
-  // 调度下一个轮询：调度下一个轮询
+  // 调度下一个轮询：调度下一个轮询，和下述配合使用，没有使用intervalMs定时器，是为了防止一些问题，好像是会存在延迟/不调用的情况
   const scheduleNextPoll = () => {
     // 如果停止控制器已中止，则返回
     if (stopController.signal.aborted) {
@@ -577,7 +581,7 @@ export async function startRuntimeService(
   };
 
   const removeSignalHandlers = installSignalHandlers(onSignal);
-  // 创建工作流监视器：创建工作流监视器
+  // 创建工作流监视器：创建工作流监视器，应该是配置文件有更新，就热加载。
   const workflowWatcher =
     // 如果工作流监视器为空，则创建工作流监视器
     options.workflowWatcher === undefined
@@ -857,6 +861,7 @@ async function createRuntimeLogger(input: {
       createJsonLineSink(
         createWriteStream(join(input.logsRoot, "symphony.jsonl"), {
           flags: "a",
+          encoding: "utf8",
         }),
       ),
     );
@@ -922,44 +927,51 @@ function createWorkspaceHookLogger(logger: StructuredLogger): (entry: {
   };
 }
 
-async function logAgentEvent(
+async function logHarnessEvent(
   logger: StructuredLogger | null,
-  event: AgentRunnerEvent,
+  event: HarnessAgentEvent,
 ): Promise<void> {
   if (logger === null) {
     return;
   }
 
   const level =
-    event.event === "turn_failed" ||
-    event.event === "turn_ended_with_error" ||
-    event.event === "startup_failed" ||
-    event.event === "turn_input_required" ||
-    event.event === "malformed"
+    event.kind === "turn_failed" ||
+    event.kind === "turn_ended_with_error" ||
+    event.kind === "startup_failed" ||
+    event.kind === "turn_input_required" ||
+    event.kind === "malformed" ||
+    event.kind === "runtime_error"
       ? "error"
-      : event.event === "unsupported_tool_call"
+      : event.kind === "unsupported_tool_call"
         ? "warn"
         : "info";
 
   const outcome =
-    event.event === "session_started"
+    event.kind === "session_started"
       ? "started"
-      : event.event === "turn_completed"
+      : event.kind === "turn_completed"
         ? "completed"
-        : event.event === "approval_auto_approved"
+        : event.kind === "approval_auto_approved"
           ? "approved"
-          : event.event === "turn_failed" ||
-              event.event === "turn_cancelled" ||
-              event.event === "turn_ended_with_error" ||
-              event.event === "startup_failed" ||
-              event.event === "turn_input_required" ||
-              event.event === "malformed"
+          : event.kind === "turn_failed" ||
+              event.kind === "turn_cancelled" ||
+              event.kind === "turn_ended_with_error" ||
+              event.kind === "startup_failed" ||
+              event.kind === "turn_input_required" ||
+              event.kind === "malformed" ||
+              event.kind === "runtime_error"
             ? "failed"
             : undefined;
 
-  await logger.log(level, event.event, event.message ?? event.event, {
+  const rawExitCode = readCursorCliExitCode(event);
+
+  await logger.log(level, event.kind, event.message ?? event.kind, {
     ...(outcome === undefined ? {} : { outcome }),
+    harness: event.harness,
+    ...(event.nativeKind === undefined ? {} : { native_kind: event.nativeKind }),
     ...(event.errorCode === undefined ? {} : { error_code: event.errorCode }),
+    ...(rawExitCode === undefined ? {} : { exit_code: rawExitCode }),
     issue_id: event.issueId,
     issue_identifier: event.issueIdentifier,
     session_id: event.sessionId ?? null,
@@ -975,6 +987,23 @@ async function logAgentEvent(
           total_tokens: event.usage.totalTokens,
         }),
   });
+}
+
+function readCursorCliExitCode(event: HarnessAgentEvent): number | undefined {
+  if (event.harness !== "cursor" || event.raw === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof event.raw === "object" &&
+    event.raw !== null &&
+    "exitCode" in event.raw &&
+    typeof event.raw.exitCode === "number"
+  ) {
+    return event.raw.exitCode;
+  }
+
+  return undefined;
 }
 
 function toHookMessageSuffix(
@@ -1140,8 +1169,8 @@ function extractErrorCode(error: unknown): string | null {
 }
 
 function supportsConfigUpdate(
-  value: AgentRunnerLike,
-): value is AgentRunnerLike & {
+  value: AgentHarnessLike,
+): value is AgentHarnessLike & {
   updateConfig(input: {
     config: ResolvedWorkflowConfig;
     tracker?: IssueTracker;

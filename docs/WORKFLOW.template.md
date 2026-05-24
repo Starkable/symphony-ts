@@ -71,6 +71,10 @@ hooks:
 # agent — Concurrency and retry behaviour
 # ============================================================
 agent:
+  # Agent runtime backend: codex (default) or cursor.
+  # Default: codex
+  harness: codex
+
   # Maximum number of issues being processed simultaneously.
   # Default: 10
   max_concurrent_agents: 10
@@ -91,7 +95,67 @@ agent:
   max_concurrent_agents_by_state: {}
 
 # ============================================================
-# codex — Codex app-server process configuration
+# harnesses — Per-backend runtime configuration
+# ============================================================
+harnesses:
+  codex:
+    # Shell command used to launch the Codex app-server.
+    # Default: codex app-server
+    command: codex app-server
+
+    approval_policy: never
+    thread_sandbox: null
+    turn_sandbox_policy: null
+    turn_timeout_ms: 3600000
+    read_timeout_ms: 5000
+    stall_timeout_ms: 300000
+
+  cursor:
+    # Cursor CLI command (non-interactive print mode uses -p).
+    # Default: agent
+    command: agent
+
+    # Optional CLI mode flag.
+    mode: agent
+
+    # Trust: pass --trust for Cursor CLI (distinct from Symphony's --acknowledge-high-trust-preview).
+    # Default: true. Set false if your agent version rejects --trust.
+    trust: true
+
+    # YOLO: pass --yolo so Cursor CLI auto-approves tool calls (unattended).
+    # Default: true. Set to false if you need interactive approval prompts.
+    yolo: true
+
+    # Optional sandbox flag passed to Cursor CLI.
+    sandbox: null
+
+    # Optional output format (for example text or json).
+    output_format: text
+
+    # Session reuse across workers for the same issue.
+    # Values: per_issue | fresh_each_run
+    reuse_policy: per_issue
+
+    # Per-turn subprocess timeout in milliseconds.
+    turn_timeout_ms: 3600000
+
+    # Per-turn structured logging (cursor_turn_start / cursor_turn_finished).
+    # Default: true
+    turn_log_enabled: true
+
+    # Max UTF-8 bytes per stdout/stderr/thinking field in symphony.jsonl.
+    # Default: 32768
+    turn_log_max_bytes: 32768
+
+    # Include full -p prompt in structured logs (sensitive; default false).
+    turn_log_include_prompt: false
+
+    # Write full CLI output to <workspace>/.symphony/cursor-turn-N.log (UTF-8).
+    # Default: true
+    turn_log_workspace_artifact: true
+
+# ============================================================
+# codex — Legacy Codex block (alias for harnesses.codex)
 # ============================================================
 codex:
   # Shell command used to launch the Codex app-server.

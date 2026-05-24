@@ -49,7 +49,9 @@ describe("config-resolver", () => {
       DEFAULT_MAX_CONCURRENT_AGENTS,
     );
     expect(resolved.agent.maxTurns).toBe(DEFAULT_MAX_TURNS);
+    expect(resolved.agent.harness).toBe("codex");
     expect(resolved.agent.maxRetryBackoffMs).toBe(DEFAULT_MAX_RETRY_BACKOFF_MS);
+    expect(resolved.harnesses.codex.command).toBe(DEFAULT_CODEX_COMMAND);
     expect(resolved.codex.command).toBe(DEFAULT_CODEX_COMMAND);
     expect(resolved.codex.turnTimeoutMs).toBe(DEFAULT_TURN_TIMEOUT_MS);
     expect(resolved.codex.readTimeoutMs).toBe(DEFAULT_READ_TIMEOUT_MS);
@@ -266,6 +268,134 @@ describe("config-resolver", () => {
         message: "tracker.kind 'jira' is not supported.",
       },
     });
+  });
+
+  it("maps legacy top-level codex config into harnesses.codex", () => {
+    const resolved = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        codex: {
+          command: "custom-codex",
+        },
+      },
+    });
+
+    expect(resolved.harnesses.codex.command).toBe("custom-codex");
+    expect(resolved.codex.command).toBe("custom-codex");
+  });
+
+  it("accepts cursor harness dispatch without codex command", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          agent: {
+            harness: "cursor",
+          },
+          harnesses: {
+            cursor: {
+              command: "agent",
+            },
+          },
+          tracker: {
+            kind: "linear",
+            api_key: "token",
+            project_slug: "ENG",
+          },
+        },
+      },
+      {},
+    );
+
+    const validation = validateDispatchConfig(resolved);
+    expect(validation).toEqual({ ok: true });
+    expect(resolved.harnesses.cursor.yolo).toBe(true);
+    expect(resolved.harnesses.cursor.trust).toBe(true);
+  });
+
+  it("parses harnesses.cursor.yolo false when set in workflow", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          agent: {
+            harness: "cursor",
+          },
+          harnesses: {
+            cursor: {
+              command: "agent",
+              yolo: false,
+            },
+          },
+          tracker: {
+            kind: "linear",
+            api_key: "token",
+            project_slug: "ENG",
+          },
+        },
+      },
+      {},
+    );
+
+    expect(resolved.harnesses.cursor.yolo).toBe(false);
+  });
+
+  it("parses harnesses.cursor.trust false when set in workflow", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          agent: {
+            harness: "cursor",
+          },
+          harnesses: {
+            cursor: {
+              command: "agent",
+              trust: false,
+            },
+          },
+          tracker: {
+            kind: "linear",
+            api_key: "token",
+            project_slug: "ENG",
+          },
+        },
+      },
+      {},
+    );
+
+    expect(resolved.harnesses.cursor.trust).toBe(false);
+  });
+
+  it("parses harnesses.cursor turn_log settings with defaults", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          agent: { harness: "cursor" },
+          harnesses: {
+            cursor: {
+              command: "agent",
+              turn_log_enabled: false,
+              turn_log_max_bytes: 4096,
+              turn_log_include_prompt: true,
+              turn_log_workspace_artifact: false,
+            },
+          },
+        },
+      },
+      {},
+    );
+
+    expect(resolved.harnesses.cursor.turnLogEnabled).toBe(false);
+    expect(resolved.harnesses.cursor.turnLogMaxBytes).toBe(4096);
+    expect(resolved.harnesses.cursor.turnLogIncludePrompt).toBe(true);
+    expect(resolved.harnesses.cursor.turnLogWorkspaceArtifact).toBe(false);
   });
 
   it("accepts dispatch when tracker and codex prerequisites are present", () => {

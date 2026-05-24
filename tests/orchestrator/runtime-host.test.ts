@@ -15,6 +15,10 @@ import type {
   IssueStateSnapshot,
   IssueTracker,
 } from "../../src/tracker/tracker.js";
+import {
+  DEFAULT_TEST_CODEX_CONFIG,
+  withHarnessConfig,
+} from "../helpers/workflow-config.js";
 
 describe("OrchestratorRuntimeHost", () => {
   it("feeds codex events into orchestrator state and schedules continuation retry after a normal worker exit", async () => {
@@ -384,7 +388,7 @@ function createIssue(overrides?: Partial<Issue>): Issue {
 }
 
 function createConfig(): ResolvedWorkflowConfig {
-  return {
+  return withHarnessConfig({
     workflowPath: "/tmp/WORKFLOW.md",
     promptTemplate: "Prompt",
     tracker: {
@@ -414,15 +418,7 @@ function createConfig(): ResolvedWorkflowConfig {
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
     },
-    codex: {
-      command: "codex-app-server",
-      approvalPolicy: "never",
-      threadSandbox: null,
-      turnSandboxPolicy: null,
-      turnTimeoutMs: 120_000,
-      readTimeoutMs: 5_000,
-      stallTimeoutMs: 60_000,
-    },
+    codex: DEFAULT_TEST_CODEX_CONFIG,
     server: {
       port: null,
     },
@@ -431,5 +427,5 @@ function createConfig(): ResolvedWorkflowConfig {
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
-  };
+  });
 }

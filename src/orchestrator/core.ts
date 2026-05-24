@@ -1,3 +1,4 @@
+import type { HarnessRuntimeEvent } from "../agent/harness/types.js";
 import type { CodexClientEvent } from "../codex/app-server-client.js";
 import { validateDispatchConfig } from "../config/config-resolver.js";
 import type {
@@ -16,6 +17,8 @@ import {
 import {
   addEndedSessionRuntime,
   applyCodexEventToOrchestratorState,
+  applyHarnessEventToOrchestratorState,
+  codexClientEventToHarnessRuntimeEvent,
 } from "../logging/session-metrics.js";
 import type { IssueStateSnapshot, IssueTracker } from "../tracker/tracker.js";
 
@@ -55,6 +58,8 @@ export interface RetryTimerResult {
 export interface CodexEventResult {
   applied: boolean;
 }
+
+export type HarnessEventResult = CodexEventResult;
 
 export interface TimerScheduler {
   set(
@@ -337,17 +342,27 @@ export class OrchestratorCore {
     );
   }
 
-  onCodexEvent(input: {
+  onHarnessRuntimeEvent(input: {
     issueId: string;
-    event: CodexClientEvent;
-  }): CodexEventResult {
+    event: HarnessRuntimeEvent;
+  }): HarnessEventResult {
     const runningEntry = this.state.running[input.issueId];
     if (runningEntry === undefined) {
       return { applied: false };
     }
 
-    applyCodexEventToOrchestratorState(this.state, runningEntry, input.event);
+    applyHarnessEventToOrchestratorState(this.state, runningEntry, input.event);
     return { applied: true };
+  }
+
+  onCodexEvent(input: {
+    issueId: string;
+    event: CodexClientEvent;
+  }): CodexEventResult {
+    return this.onHarnessRuntimeEvent({
+      issueId: input.issueId,
+      event: codexClientEventToHarnessRuntimeEvent(input.event),
+    });
   }
 
   private syncStateFromConfig(): void {

@@ -18,6 +18,7 @@ import type {
   IssueStateSnapshot,
   IssueTracker,
 } from "../../src/tracker/tracker.js";
+import { withHarnessConfig } from "../helpers/workflow-config.js";
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -457,7 +458,19 @@ function createTracker(input?: {
 }
 
 function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
-  return {
+  const codex = {
+    command: `${process.execPath} "${fixturePath}" ${scenario}`,
+    approvalPolicy: "full-auto",
+    threadSandbox: "workspace-write",
+    turnSandboxPolicy: {
+      type: "workspace-write",
+    },
+    turnTimeoutMs: 1_000,
+    readTimeoutMs: 1_000,
+    stallTimeoutMs: 2_000,
+  };
+
+  return withHarnessConfig({
     workflowPath: join(root, "WORKFLOW.md"),
     promptTemplate:
       "Initial prompt for {{ issue.identifier }} attempt={{ attempt }}",
@@ -488,17 +501,7 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
     },
-    codex: {
-      command: `${process.execPath} "${fixturePath}" ${scenario}`,
-      approvalPolicy: "full-auto",
-      threadSandbox: "workspace-write",
-      turnSandboxPolicy: {
-        type: "workspace-write",
-      },
-      turnTimeoutMs: 1_000,
-      readTimeoutMs: 1_000,
-      stallTimeoutMs: 2_000,
-    },
+    codex,
     server: {
       port: null,
     },
@@ -507,7 +510,7 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
-  };
+  });
 }
 
 async function createRoot(): Promise<string> {

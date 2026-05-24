@@ -23,7 +23,12 @@ export interface WorkflowWorkspaceConfig {
   root: string;
 }
 
+export type AgentHarnessKind = "codex" | "cursor";
+
+export type CursorReusePolicy = "per_issue" | "fresh_each_run";
+
 export interface WorkflowAgentConfig {
+  harness: AgentHarnessKind;
   maxConcurrentAgents: number;
   maxTurns: number;
   maxRetryBackoffMs: number;
@@ -38,6 +43,32 @@ export interface WorkflowCodexConfig {
   turnTimeoutMs: number;
   readTimeoutMs: number;
   stallTimeoutMs: number;
+}
+
+export interface WorkflowCursorHarnessConfig {
+  command: string;
+  mode: string | null;
+  /** When true, pass `--yolo` so Cursor CLI auto-approves tool calls (unattended). */
+  yolo: boolean;
+  /** When true, pass `--trust` for Cursor CLI trusted/unattended workspace behavior. */
+  trust: boolean;
+  sandbox: unknown;
+  outputFormat: string | null;
+  reusePolicy: CursorReusePolicy;
+  turnTimeoutMs: number;
+  /** Emit structured per-turn logs (cursor_turn_start / cursor_turn_finished). */
+  turnLogEnabled: boolean;
+  /** Max UTF-8 bytes per stdout/stderr/thinking field in structured logs. */
+  turnLogMaxBytes: number;
+  /** Include full prompt in structured logs (default redacts -p value). */
+  turnLogIncludePrompt: boolean;
+  /** Write full turn output to workspace .symphony/cursor-turn-N.log. */
+  turnLogWorkspaceArtifact: boolean;
+}
+
+export interface WorkflowHarnessesConfig {
+  codex: WorkflowCodexConfig;
+  cursor: WorkflowCursorHarnessConfig;
 }
 
 export interface WorkflowServerConfig {
@@ -58,6 +89,8 @@ export interface ResolvedWorkflowConfig {
   workspace: WorkflowWorkspaceConfig;
   hooks: WorkflowHooksConfig;
   agent: WorkflowAgentConfig;
+  harnesses: WorkflowHarnessesConfig;
+  /** @deprecated Use `harnesses.codex`; kept for backward-compatible call sites. */
   codex: WorkflowCodexConfig;
   server: WorkflowServerConfig;
   observability: WorkflowObservabilityConfig;

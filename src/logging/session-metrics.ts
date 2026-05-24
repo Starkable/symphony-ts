@@ -1,4 +1,5 @@
 import type { CodexClientEvent } from "../codex/app-server-client.js";
+import type { HarnessRuntimeEvent } from "../agent/harness/types.js";
 import type {
   LiveSession,
   OrchestratorState,
@@ -33,6 +34,28 @@ export function applyCodexEventToSession(
   session: LiveSession,
   event: CodexClientEvent,
 ): SessionTelemetryUpdateResult {
+  return applyHarnessEventToSession(
+    session,
+    codexClientEventToHarnessRuntimeEvent(event),
+  );
+}
+
+export function applyCodexEventToOrchestratorState(
+  state: OrchestratorState,
+  runningEntry: RunningEntry,
+  event: CodexClientEvent,
+): SessionTelemetryUpdateResult {
+  return applyHarnessEventToOrchestratorState(
+    state,
+    runningEntry,
+    codexClientEventToHarnessRuntimeEvent(event),
+  );
+}
+
+export function applyHarnessEventToSession(
+  session: LiveSession,
+  event: HarnessRuntimeEvent,
+): SessionTelemetryUpdateResult {
   if (event.sessionId !== undefined) {
     session.sessionId = event.sessionId;
   }
@@ -42,12 +65,12 @@ export function applyCodexEventToSession(
   if (event.turnId !== undefined) {
     session.turnId = event.turnId;
   }
-  session.codexAppServerPid = event.codexAppServerPid;
-  session.lastCodexEvent = event.event;
+  session.codexAppServerPid = event.runtimePid ?? null;
+  session.lastCodexEvent = event.kind;
   session.lastCodexTimestamp = event.timestamp;
-  session.lastCodexMessage = summarizeCodexEvent(event);
+  session.lastCodexMessage = summarizeHarnessEvent(event);
 
-  if (event.event === "session_started") {
+  if (event.kind === "session_started") {
     session.turnCount += 1;
   }
 
@@ -92,12 +115,12 @@ export function applyCodexEventToSession(
   };
 }
 
-export function applyCodexEventToOrchestratorState(
+export function applyHarnessEventToOrchestratorState(
   state: OrchestratorState,
   runningEntry: RunningEntry,
-  event: CodexClientEvent,
+  event: HarnessRuntimeEvent,
 ): SessionTelemetryUpdateResult {
-  const result = applyCodexEventToSession(runningEntry, event);
+  const result = applyHarnessEventToSession(runningEntry, event);
 
   state.codexTotals.inputTokens += result.inputTokensDelta;
   state.codexTotals.outputTokens += result.outputTokensDelta;
@@ -147,13 +170,13 @@ export function getAggregateSecondsRunning(
   return roundSeconds(total);
 }
 
-export function summarizeCodexEvent(event: CodexClientEvent): string {
+export function summarizeHarnessEvent(event: HarnessRuntimeEvent): string {
   if (event.message !== undefined && event.message.trim().length > 0) {
     return event.message.trim();
   }
 
   if (
-    event.event === "unsupported_tool_call" &&
+    event.kind === "unsupported_tool_call" &&
     event.toolName !== undefined &&
     event.toolName !== null &&
     event.toolName.trim().length > 0
@@ -161,8 +184,33 @@ export function summarizeCodexEvent(event: CodexClientEvent): string {
     return `unsupported tool call: ${event.toolName.trim()}`;
   }
 
-  const fallback = SESSION_EVENT_MESSAGES[event.event];
-  return fallback ?? event.event;
+  const fallback = SESSION_EVENT_MESSAGES[event.kind as CodexClientEvent["event"]];
+  return fallback ?? event.kind;
+}
+
+export function codexClientEventToHarnessRuntimeEvent(
+  event: CodexClientEvent,
+): HarnessRuntimeEvent {
+  return {
+    kind: event.event,
+    harness: "codex",
+    timestamp: event.timestamp,
+    nativeKind: event.event,
+    runtimePid: event.codexAppServerPid,
+    ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId }),
+    ...(event.threadId === undefined ? {} : { threadId: event.threadId }),
+    ...(event.turnId === undefined ? {} : { turnId: event.turnId }),
+    ...(event.usage === undefined ? {} : { usage: event.usage }),
+    ...(event.rateLimits === undefined ? {} : { rateLimits: event.rateLimits }),
+    ...(event.errorCode === undefined ? {} : { errorCode: event.errorCode }),
+    ...(event.message === undefined ? {} : { message: event.message }),
+    ...(event.toolName === undefined ? {} : { toolName: event.toolName }),
+    ...(event.raw === undefined ? {} : { raw: event.raw }),
+  };
+}
+
+export function summarizeCodexEvent(event: CodexClientEvent): string {
+  return summarizeHarnessEvent(codexClientEventToHarnessRuntimeEvent(event));
 }
 
 function computeCounterDelta(previous: number, next: number): number {

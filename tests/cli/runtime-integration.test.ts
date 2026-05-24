@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLI_ACKNOWLEDGEMENT_FLAG, runCli } from "../../src/cli/main.js";
 import { resolveWorkflowConfig } from "../../src/config/config-resolver.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
+import { withHarnessConfig } from "../helpers/workflow-config.js";
 import { loadWorkflowDefinition } from "../../src/config/workflow-loader.js";
 import type { Issue } from "../../src/domain/model.js";
 import type { PollTickResult } from "../../src/orchestrator/core.js";
@@ -550,7 +551,18 @@ function createIssue(overrides?: Partial<Issue>): Issue {
 function createConfig(
   overrides: Partial<ResolvedWorkflowConfig> = {},
 ): ResolvedWorkflowConfig {
-  return {
+  const codex = {
+    command: "codex app-server",
+    approvalPolicy: null,
+    threadSandbox: null,
+    turnSandboxPolicy: null,
+    turnTimeoutMs: 3_600_000,
+    readTimeoutMs: 5_000,
+    stallTimeoutMs: 300_000,
+    ...overrides.codex,
+  };
+
+  return withHarnessConfig({
     workflowPath: "/tmp/WORKFLOW.md",
     promptTemplate: "Prompt",
     tracker: {
@@ -579,26 +591,22 @@ function createConfig(
       maxTurns: 20,
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
-    },
-    codex: {
-      command: "codex app-server",
-      approvalPolicy: null,
-      threadSandbox: null,
-      turnSandboxPolicy: null,
-      turnTimeoutMs: 3_600_000,
-      readTimeoutMs: 5_000,
-      stallTimeoutMs: 300_000,
+      ...overrides.agent,
     },
     server: {
       port: null,
+      ...overrides.server,
     },
     observability: {
       dashboardEnabled: true,
       refreshMs: 1_000,
       renderIntervalMs: 16,
+      ...overrides.observability,
     },
     ...overrides,
-  };
+    codex,
+    harnesses: overrides.harnesses,
+  });
 }
 
 async function createTempDir(prefix: string): Promise<string> {

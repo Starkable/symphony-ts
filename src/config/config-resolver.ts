@@ -7,6 +7,17 @@ import { ERROR_CODES } from "../errors/codes.js";
 import {
   DEFAULT_ACTIVE_STATES,
   DEFAULT_CODEX_COMMAND,
+  DEFAULT_CURSOR_COMMAND,
+  DEFAULT_CURSOR_MODE,
+  DEFAULT_CURSOR_OUTPUT_FORMAT,
+  DEFAULT_CURSOR_REUSE_POLICY,
+  DEFAULT_CURSOR_TURN_TIMEOUT_MS,
+  DEFAULT_CURSOR_TURN_LOG_ENABLED,
+  DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT,
+  DEFAULT_CURSOR_TURN_LOG_MAX_BYTES,
+  DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
+  DEFAULT_CURSOR_YOLO,
+  DEFAULT_CURSOR_TRUST,
   DEFAULT_HOOK_TIMEOUT_MS,
   DEFAULT_LINEAR_ENDPOINT,
   DEFAULT_LINEAR_NETWORK_TIMEOUT_MS,
@@ -27,8 +38,12 @@ import {
   DEFAULT_WORKSPACE_ROOT,
 } from "./defaults.js";
 import type {
+  AgentHarnessKind,
+  CursorReusePolicy,
   DispatchValidationResult,
   ResolvedWorkflowConfig,
+  WorkflowCodexConfig,
+  WorkflowCursorHarnessConfig,
 } from "./types.js";
 
 const LINEAR_CANONICAL_API_KEY_ENV = "LINEAR_API_KEY";
@@ -44,8 +59,13 @@ export function resolveWorkflowConfig(
   const hooks = asRecord(config.hooks);
   const agent = asRecord(config.agent);
   const codex = asRecord(config.codex);
+  const harnesses = asRecord(config.harnesses);
+  const harnessesCodex = asRecord(harnesses.codex);
+  const harnessesCursor = asRecord(harnesses.cursor);
   const server = asRecord(config.server);
   const observability = asRecord(config.observability);
+  const resolvedCodex = resolveCodexHarnessConfig(codex, harnessesCodex);
+  const resolvedCursor = resolveCursorHarnessConfig(harnessesCursor);
 
   return {
     workflowPath: workflow.workflowPath,
@@ -87,6 +107,7 @@ export function resolveWorkflowConfig(
         readPositiveInteger(hooks.timeout_ms) ?? DEFAULT_HOOK_TIMEOUT_MS,
     },
     agent: {
+      harness: readHarnessKind(agent.harness),
       maxConcurrentAgents:
         readPositiveInteger(agent.max_concurrent_agents) ??
         DEFAULT_MAX_CONCURRENT_AGENTS,
@@ -98,18 +119,11 @@ export function resolveWorkflowConfig(
         agent.max_concurrent_agents_by_state,
       ),
     },
-    codex: {
-      command: readString(codex.command) ?? DEFAULT_CODEX_COMMAND,
-      approvalPolicy: codex.approval_policy,
-      threadSandbox: codex.thread_sandbox,
-      turnSandboxPolicy: codex.turn_sandbox_policy,
-      turnTimeoutMs:
-        readPositiveInteger(codex.turn_timeout_ms) ?? DEFAULT_TURN_TIMEOUT_MS,
-      readTimeoutMs:
-        readPositiveInteger(codex.read_timeout_ms) ?? DEFAULT_READ_TIMEOUT_MS,
-      stallTimeoutMs:
-        readInteger(codex.stall_timeout_ms) ?? DEFAULT_STALL_TIMEOUT_MS,
+    harnesses: {
+      codex: resolvedCodex,
+      cursor: resolvedCursor,
     },
+    codex: resolvedCodex,
     server: {
       port: readNonNegativeInteger(server.port),
     },
@@ -159,14 +173,99 @@ export function validateDispatchConfig(
     );
   }
 
-  if (config.codex.command.trim() === "") {
+  const harnesses = config.harnesses ?? {
+    codex: config.codex,
+    cursor: resolveCursorHarnessConfig({}),
+  };
+
+  if (config.agent.harness === "cursor") {
+    if (harnesses.cursor.command.trim() === "") {
+      return invalid(
+        ERROR_CODES.configInvalid,
+        "harnesses.cursor.command must be present and non-empty before dispatch.",
+      );
+    }
+    return { ok: true };
+  }
+
+  if (harnesses.codex.command.trim() === "") {
     return invalid(
       ERROR_CODES.configInvalid,
-      "codex.command must be present and non-empty before dispatch.",
+      "harnesses.codex.command must be present and non-empty before dispatch.",
     );
   }
 
   return { ok: true };
+}
+
+function resolveCodexHarnessConfig(
+  legacyCodex: Record<string, unknown>,
+  harnessesCodex: Record<string, unknown>,
+): WorkflowCodexConfig {
+  const merged = {
+    ...legacyCodex,
+    ...harnessesCodex,
+  };
+
+  return {
+    command: readString(merged.command) ?? DEFAULT_CODEX_COMMAND,
+    approvalPolicy: merged.approval_policy,
+    threadSandbox: merged.thread_sandbox,
+    turnSandboxPolicy: merged.turn_sandbox_policy,
+    turnTimeoutMs:
+      readPositiveInteger(merged.turn_timeout_ms) ?? DEFAULT_TURN_TIMEOUT_MS,
+    readTimeoutMs:
+      readPositiveInteger(merged.read_timeout_ms) ?? DEFAULT_READ_TIMEOUT_MS,
+    stallTimeoutMs:
+      readInteger(merged.stall_timeout_ms) ?? DEFAULT_STALL_TIMEOUT_MS,
+  };
+}
+
+function resolveCursorHarnessConfig(
+  harnessesCursor: Record<string, unknown>,
+): WorkflowCursorHarnessConfig {
+  return {
+    command: readString(harnessesCursor.command) ?? DEFAULT_CURSOR_COMMAND,
+    mode: readString(harnessesCursor.mode) ?? DEFAULT_CURSOR_MODE,
+    yolo: readBoolean(harnessesCursor.yolo) ?? DEFAULT_CURSOR_YOLO,
+    trust: readBoolean(harnessesCursor.trust) ?? DEFAULT_CURSOR_TRUST,
+    sandbox: harnessesCursor.sandbox,
+    outputFormat:
+      readString(harnessesCursor.output_format) ??
+      DEFAULT_CURSOR_OUTPUT_FORMAT,
+    reusePolicy: readCursorReusePolicy(harnessesCursor.reuse_policy),
+    turnTimeoutMs:
+      readPositiveInteger(harnessesCursor.turn_timeout_ms) ??
+      DEFAULT_CURSOR_TURN_TIMEOUT_MS,
+    turnLogEnabled:
+      readBoolean(harnessesCursor.turn_log_enabled) ??
+      DEFAULT_CURSOR_TURN_LOG_ENABLED,
+    turnLogMaxBytes:
+      readPositiveInteger(harnessesCursor.turn_log_max_bytes) ??
+      DEFAULT_CURSOR_TURN_LOG_MAX_BYTES,
+    turnLogIncludePrompt:
+      readBoolean(harnessesCursor.turn_log_include_prompt) ??
+      DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT,
+    turnLogWorkspaceArtifact:
+      readBoolean(harnessesCursor.turn_log_workspace_artifact) ??
+      DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
+  };
+}
+
+function readHarnessKind(value: unknown): AgentHarnessKind {
+  const harness = readString(value)?.trim().toLowerCase();
+  if (harness === "cursor") {
+    return "cursor";
+  }
+  return "codex";
+}
+
+function readCursorReusePolicy(value: unknown): CursorReusePolicy {
+  const policy = readString(value)?.trim().toLowerCase();
+  if (policy === "fresh_each_run") {
+    return "fresh_each_run";
+  }
+  return DEFAULT_CURSOR_REUSE_POLICY;
 }
 
 function invalid(code: string, message: string): DispatchValidationResult {
