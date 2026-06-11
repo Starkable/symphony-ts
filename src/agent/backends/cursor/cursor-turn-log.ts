@@ -30,6 +30,11 @@ export function redactCursorCliArgs(
       continue;
     }
 
+    if (token === undefined) {
+      index += 1;
+      continue;
+    }
+
     redacted.push(token);
     index += 1;
   }

@@ -124,6 +124,7 @@ export function buildCursorCliArgs(input: {
     args.push("--yolo");
   }
   args.push("-p", input.prompt);
+  args.push("-force");
   if (input.outputFormat !== null && input.outputFormat.trim() !== "") {
     args.push("--output-format", input.outputFormat);
   }

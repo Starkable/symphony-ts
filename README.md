@@ -215,3 +215,18 @@ model in [`SPEC.upstream.md`](SPEC.upstream.md) and follow the repository workfl
 This repository is licensed under [`Apache-2.0`](LICENSE). See [`NOTICE`](NOTICE) for attribution
 information related to the upstream OpenAI Symphony project and this unofficial TypeScript
 implementation.
+
+---
+understand-community:
+    serviceId: symphony-ts
+    displayName: loopWork
+    domains:
+        - order.internal.example.com
+    aliases:
+        - symphony
+    contextPaths:
+        - /
+---
+
+# Order Service
+...
