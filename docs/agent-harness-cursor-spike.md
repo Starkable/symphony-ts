@@ -1,123 +1,102 @@
-# Cursor CLI Harness Spike
+# Cursor CLI Harness
 
-本文档记录 symphony-ts `CursorAgentHarness` 对接 [Cursor CLI](https://cursor.com/docs/cli/overview) 时的命令模板、会话策略与已知限制。
+symphony-ts `CursorAgentHarness` 通过 Cursor Agent CLI 在 issue workspace 中无人值守执行 turn。实现借鉴 [cc-connect](https://github.com/chenhg5/cc-connect) 的 **CLI 调用协议**（`--print` + `stream-json`），但保留 Symphony 自身的 Harness / Orchestrator / WORKFLOW 配置模型。
 
 ## 命令模板
 
-默认命令：`agent`（可通过 `harnesses.cursor.command` 覆盖）。
+默认命令：`agent`（可通过 `harnesses.cursor.command` 覆盖；生产环境建议使用绝对路径）。
 
 | 场景 | 命令形态 |
 |------|----------|
-| 首次 turn | `agent [--trust] [--yolo] -p "<prompt>" [--mode <mode>] [--sandbox <sandbox>] [--output-format <format>]`（`trust` / `yolo` 默认 `true` 时含对应 flag） |
-| 同 worker 后续 turn（无 chat id） | 在上述参数后追加 `--continue` |
-| 跨 worker 恢复（有 chat id） | 在上述参数后追加 `--resume=<chatId>` |
+| 首次 turn | `agent --print --output-format stream-json --force [--model <id>] --workspace <dir> -- <prompt>` |
+| 后续 turn（有 session id） | 在上述参数中插入 `--resume <chatId>` |
 
-`--trust`：Cursor CLI 信任/无人值守相关开关（与 **Symphony** 主进程的 `--acknowledge-high-trust-preview` 无关；后者只约束是否启动 Symphony）。可在 `WORKFLOW.md` 中设置 `harnesses.cursor.trust: false` 关闭。不支持该 flag 的旧版 CLI 会非 0 退出。
+工作目录与子进程 `cwd` 均为 issue workspace 根目录。
 
-`--yolo`：Cursor CLI 的 YOLO 模式，工具调用自动批准，适合无人值守。可在 `WORKFLOW.md` 中设置 `harnesses.cursor.yolo: false` 关闭。若已安装的 `agent` 不支持该 flag，会出现非 0 退出（`cursor_exit_*`），请升级 CLI 或关闭 `yolo`。
+## 配置（Breaking）
 
-工作目录：issue workspace 根目录（与 Codex harness 一致）。
-
-## `--continue` vs `--resume` 默认策略
-
-**默认策略（v0）**：
-
-1. `reuse_policy: per_issue`（默认）时，将 chat id 写入 `<workspace>/.symphony/cursor-session.json`。
-2. 同一 issue 的 **turn 1** 发送完整 `buildTurnPrompt` 产物。
-3. **turn 2+** 且已有 chat id：使用 `--resume=<chatId>` + 简短 continuation 提示（非完整 workflow 模板）。
-4. **turn 2+** 但尚无 chat id：使用 `--continue`。
-5. `fresh_each_run` 时清空 session 文件，且不使用 resume/continue。
-
-该策略对齐 OpenSymphony「per_issue 会话可跨 worker 复用」语义；continuation retry 仍由 `OrchestratorCore` 调度，harness 不重复实现。
-
-## Chat ID 提取
-
-MVP 从 stdout/stderr 合并输出中用正则提取，支持例如：
-
-- `Chat ID: <id>`
-- `chat_id: <id>`
-- JSON 片段 `"chatId": "<id>"`
-
-若 CLI 输出格式变更，可通过 Spike 结果扩展 `extractChatIdFromCliOutput`。
-
-## 退出码（暂定）
-
-| 退出码 | Harness 事件 | 说明 |
-|--------|--------------|------|
-| `0` | `turn_completed` | turn 成功结束 |
-| 非 `0` | `turn_failed` | 子进程失败；`errorCode=cursor_exit_<code>` |
-| 超时杀进程 | `runtime_error` | `errorCode=cursor_turn_timeout` |
-
-## 每 Turn 日志与思考过程
-
-symphony-ts 在 Cursor harness 中为每个 turn 写入可追踪日志（默认开启）：
-
-| 配置项 | 默认 | 说明 |
-|--------|------|------|
-| `turn_log_enabled` | `true` | 写入 `symphony.jsonl` 的 `cursor_turn_start` / `cursor_turn_finished` |
-| `turn_log_max_bytes` | `32768` | 结构化日志中 stdout/stderr/thinking 单字段 UTF-8 字节上限 |
-| `turn_log_include_prompt` | `false` | 为 `true` 时在日志中保留 `-p` 全文（敏感） |
-| `turn_log_workspace_artifact` | `true` | 写入 `<workspace>/.symphony/cursor-turn-<N>.log`（UTF-8） |
-
-### 结构化日志事件
-
-- **`cursor_turn_start`**：`cli_command`、`cli_args`（默认脱敏 prompt）、`turn_number`、`chat_id`、`prompt_chars`
-- **`cursor_turn_finished`**：`exit_code`、`duration_ms`、`stdout` / `stderr` / `thinking`（截断）、`artifact_path`
-
-子进程输出在 Windows 上经 GBK 解码为 Unicode 后再写入 JSON/文件，避免中文乱码；`symphony.jsonl` 落盘使用 UTF-8。
-
-### Workspace 工件
-
-路径：`<workspace>/.symphony/cursor-turn-1.log`（按 turn 递增）。
-
-- 开头：开始时间、CLI 调用行（脱敏）
-- 运行中：增量追加 stdout/stderr 块（中间结果）
-- 结尾：`exit_code`、`[thinking]`（若解析到）、若已流式输出则不再重复全文 stdout/stderr
-
-### 思考块（Thinking）
-
-symphony-ts 从 CLI 合并输出中启发式提取 thinking（`` ```thinking ``、`` ```reasoning ``、`Thinking:` 行、JSON `thinking` 字段等）。
-
-**要在 CLI 输出中包含 thinking 块**，需在用户级配置中开启（symphony 无法通过 argv 等价开关）：
-
-```json
-{
-  "display": {
-    "showThinkingBlocks": true
-  }
-}
+```yaml
+harnesses:
+  cursor:
+    command: agent
+    mode: force          # 唯一合法值
+    model: null          # 可选，如 composer-2.5-fast（用 agent models 查 id）
+    reuse_policy: per_issue
+    turn_timeout_ms: 3600000
 ```
 
-文件：`~/.cursor/cli-config.json`（修改后重启 CLI / 重新跑 turn）。
+已移除：`trust`、`yolo`、`output_format`、`mode: agent`。
 
-## stdout 样例（示意）
+### 迁移示例
 
+```yaml
+# 旧（将失败）
+cursor:
+  mode: agent
+  trust: true
+  yolo: true
+  output_format: text
+
+# 新
+cursor:
+  mode: force
+  model: composer-2.5-fast   # 可选
 ```
-Chat ID: chat-abc123
-Applied edits to src/example.ts
-done
+
+## 会话策略
+
+1. `reuse_policy: per_issue`（默认）时，将 `session_id` 写入 `<workspace>/.symphony/cursor-session.json`。
+2. **turn 1** 发送完整 `buildTurnPrompt` 产物。
+3. **turn 2+** 且已有 chat id：`--resume <chatId>` + 简短 continuation 提示。
+4. `fresh_each_run` 时清空 session 文件。
+
+`session_id` 在 CLI 输出第一行 `system.init` 时即持久化（不等 turn 结束）。
+
+## stream-json 与 Dashboard
+
+Harness 逐行解析 stdout，将事件映射为 `HarnessRuntimeEvent` 并实时推送到 Orchestrator / Dashboard：
+
+| Cursor 事件 | Harness 事件 | Dashboard `last_message` |
+|-------------|--------------|-------------------------|
+| `system` init | `notification` | 会话初始化 |
+| `thinking` completed | `notification` | thinking 文本 |
+| `assistant` | `other_message` | 助手回复 |
+| `tool_call` started | `other_message` | `Tool Bash: ...` |
+| `result` success | `turn_completed` | 最终结果 + token usage |
+
+stdin 保持 pipe；若 CLI 发出 `interaction_query`，harness 自动批准（无人值守兜底）。
+
+## 退出码
+
+| 场景 | Harness 事件 | 说明 |
+|------|--------------|------|
+| `result` 且 `is_error: false` | `turn_completed` | turn 成功 |
+| 非 0 退出 / `is_error: true` | `turn_failed` | `errorCode=cursor_exit_<code>` |
+| 超时 | `runtime_error` | `errorCode=cursor_turn_timeout` |
+
+## 实测附录（Windows，login 态）
+
+```bash
+agent --print --output-format stream-json --force --workspace . -- "hello"
 ```
 
-## Windows 子进程输出编码
+输出序列：`system(init)` → `user` → `assistant` → `result(success)`，含 `session_id` UUID 与 `usage.inputTokens/outputTokens`。
 
-Cursor harness 在 Windows 上通过 `shell: true` 调起 cmd，子进程 stderr/stdout 在中文系统上通常为 **GBK（CP936）**。
+工具调用场景（`dir`）：额外出现 `thinking` delta/completed、`tool_call` started/completed；`--force` 下未出现 `interaction_query`。
 
-symphony-ts 在 [`src/process/decode-child-output.ts`](../src/process/decode-child-output.ts) 中统一解码：Windows 使用 `TextDecoder("gbk")`，其它平台使用 UTF-8。解码后的文本经 `summarizeCursorOutput` 写入 `turn_failed` 等结构化日志的 `message` 字段。
+## 预检与运维
 
-**说明**：workspace hooks（`sh -lc`）仍按 UTF-8 处理，与 Cursor cmd 路径分离，避免误解码。
+- dispatch 前校验 `harnesses.cursor.command` 可执行；失败时提示安装 CLI 或配置绝对路径。
+- **Windows**：可配置 `command: agent`（无需绝对路径）。Symphony 会通过 `where.exe` 解析到 `agent.cmd`，再用 `cmd.exe /d /s /c` 包装启动（与在终端直接运行 `agent` 行为一致）；`shell` 仍为 `false`，长 prompt 走 `--` positional。
+- Linux systemd 等服务环境请显式配置 `command` 绝对路径，勿依赖服务 PATH。
+- Cursor CLI `stream-json` 管道输出在全部平台（含 Windows）按 **UTF-8** 解码；其它 Windows 子进程默认仍可用 GBK（见 `src/process/decode-child-output.ts`）。
 
-### 常见可读错误（修复乱码后）
+## 待验证
 
-| 日志表现 | 含义 | 处理 |
-|----------|------|------|
-| `'agent' 不是内部或外部命令...` | Cursor CLI 未安装或不在 PATH | 安装 [Cursor CLI](https://cursor.com/docs/cli/overview)，或在 `WORKFLOW.md` 中设置 `harnesses.cursor.command` 为 `where agent` 得到的绝对路径 |
-| `error_code=cursor_exit_1`，约数十毫秒内失败 | 多为上述「命令找不到」，而非 turn 超时 | 在同一 PowerShell 中执行 `where.exe agent` 验证 |
-| `beforeRun` exit **128** | workspace 内非 Git 仓库或 clone 失败 | 删除对应 `<workspace.root>/<issue-id>` 目录后重跑，确保 `after_create` 的 `git clone` 成功 |
+- `--resume <uuid>` 跨 turn 恢复（本地补测）。
+- `sandbox` 是否为当前 CLI 稳定支持的 flag（默认不传）。
 
-## 待验证（Open Questions）
+## 参考
 
-- `--output-format json` 是否稳定输出可解析 chat id（若稳定可改为 JSON adapter）。
-- 消除 Node `DEP0190`（`shell: true` + 分离参数列表）的安全启动方式。
-- 与 `agent.stall_timeout_ms` 的关系：v0 仅使用 `harnesses.cursor.turn_timeout_ms`。
-- 旧版 Cursor CLI 若不支持 `--yolo`，需在 WORKFLOW 中设置 `yolo: false` 或升级 CLI。
-- 旧版 Cursor CLI 若不支持 `--trust`，需在 WORKFLOW 中设置 `trust: false` 或升级 CLI。
+- Cursor CLI 文档：https://cursor.com/docs/cli/overview
+- cc-connect 实现：`agent/cursor/session.go`（仅 CLI 层参考）

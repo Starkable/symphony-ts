@@ -40,14 +40,24 @@ export async function loadWorkflowSnapshot(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<WorkflowSnapshot> {
   const definition = await loadWorkflowDefinition(workflowPath);
+  const harnessesCursor = asWorkflowRecord(
+    asWorkflowRecord(definition.config.harnesses).cursor,
+  );
   const config = resolveWorkflowConfig(definition, environment);
 
   return {
     definition,
     config,
-    dispatchValidation: validateDispatchConfig(config),
+    dispatchValidation: validateDispatchConfig(config, harnessesCursor),
     loadedAt: new Date().toISOString(),
   };
+}
+
+function asWorkflowRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
 }
 
 export class WorkflowWatcher {

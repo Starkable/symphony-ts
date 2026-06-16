@@ -1,7 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../src/agent/backends/cursor/cursor-command-resolve.js", () => ({
+  isCursorCommandAvailable: vi.fn(() => true),
+}));
 
 import {
   resolveWorkflowConfig,
@@ -309,27 +313,22 @@ describe("config-resolver", () => {
       {},
     );
 
-    const validation = validateDispatchConfig(resolved);
+    const validation = validateDispatchConfig(resolved, {
+      command: "agent",
+    });
     expect(validation).toEqual({ ok: true });
-    expect(resolved.harnesses.cursor.yolo).toBe(true);
-    expect(resolved.harnesses.cursor.trust).toBe(true);
+    expect(resolved.harnesses.cursor.mode).toBe("force");
+    expect(resolved.harnesses.cursor.model).toBeNull();
   });
 
-  it("parses harnesses.cursor.yolo false when set in workflow", () => {
+  it("rejects deprecated harnesses.cursor.trust in dispatch validation", () => {
     const resolved = resolveWorkflowConfig(
       {
         workflowPath: "/repo/WORKFLOW.md",
         promptTemplate: "Prompt",
         config: {
-          agent: {
-            harness: "cursor",
-          },
-          harnesses: {
-            cursor: {
-              command: "agent",
-              yolo: false,
-            },
-          },
+          agent: { harness: "cursor" },
+          harnesses: { cursor: { command: "agent" } },
           tracker: {
             kind: "linear",
             api_key: "token",
@@ -340,24 +339,21 @@ describe("config-resolver", () => {
       {},
     );
 
-    expect(resolved.harnesses.cursor.yolo).toBe(false);
+    const validation = validateDispatchConfig(resolved, { trust: true });
+    expect(validation.ok).toBe(false);
+    if (!validation.ok) {
+      expect(validation.error.message).toContain("trust");
+    }
   });
 
-  it("parses harnesses.cursor.trust false when set in workflow", () => {
+  it("rejects non-force harnesses.cursor.mode at dispatch", () => {
     const resolved = resolveWorkflowConfig(
       {
         workflowPath: "/repo/WORKFLOW.md",
         promptTemplate: "Prompt",
         config: {
-          agent: {
-            harness: "cursor",
-          },
-          harnesses: {
-            cursor: {
-              command: "agent",
-              trust: false,
-            },
-          },
+          agent: { harness: "cursor" },
+          harnesses: { cursor: { command: "agent", mode: "agent" } },
           tracker: {
             kind: "linear",
             api_key: "token",
@@ -368,7 +364,29 @@ describe("config-resolver", () => {
       {},
     );
 
-    expect(resolved.harnesses.cursor.trust).toBe(false);
+    const validation = validateDispatchConfig(resolved, { mode: "agent" });
+    expect(validation.ok).toBe(false);
+  });
+
+  it("parses harnesses.cursor.model when set in workflow", () => {
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          agent: { harness: "cursor" },
+          harnesses: {
+            cursor: {
+              command: "agent",
+              model: "composer-2.5-fast",
+            },
+          },
+        },
+      },
+      {},
+    );
+
+    expect(resolved.harnesses.cursor.model).toBe("composer-2.5-fast");
   });
 
   it("parses harnesses.cursor turn_log settings with defaults", () => {

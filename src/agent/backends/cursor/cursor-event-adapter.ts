@@ -2,6 +2,7 @@ import type {
   HarnessAgentEvent,
   HarnessRuntimeEvent,
   HarnessRuntimeEventKind,
+  HarnessUsage,
 } from "../../harness/types.js";
 import type { CursorCliRunResult } from "./cursor-cli-session.js";
 
@@ -13,6 +14,8 @@ export function createCursorHarnessEvent(input: {
   sessionId?: string | null;
   turnId?: string | null;
   nativeKind?: string;
+  toolName?: string | null;
+  usage?: HarnessUsage;
   raw?: unknown;
 }): HarnessRuntimeEvent {
   return {
@@ -24,6 +27,8 @@ export function createCursorHarnessEvent(input: {
     ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
     ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
     ...(input.turnId === undefined ? {} : { turnId: input.turnId }),
+    ...(input.toolName === undefined ? {} : { toolName: input.toolName }),
+    ...(input.usage === undefined ? {} : { usage: input.usage }),
     ...(input.raw === undefined ? {} : { raw: input.raw }),
   };
 }
@@ -35,13 +40,21 @@ export function mapCursorCliResultToHarnessEvent(
     chatId: string | null;
   },
 ): HarnessRuntimeEvent {
+  if (result.terminalEvent !== null) {
+    return {
+      ...result.terminalEvent,
+      sessionId: result.terminalEvent.sessionId ?? result.sessionId ?? input.chatId,
+      turnId: result.terminalEvent.turnId ?? `turn-${input.turnNumber}`,
+    };
+  }
+
   if (result.timedOut) {
     return createCursorHarnessEvent({
       kind: "runtime_error",
       nativeKind: "turn_timeout",
       message: "Cursor CLI turn timed out",
       errorCode: "cursor_turn_timeout",
-      sessionId: input.chatId,
+      sessionId: result.sessionId ?? input.chatId,
       turnId: `turn-${input.turnNumber}`,
       raw: result,
     });
@@ -50,8 +63,8 @@ export function mapCursorCliResultToHarnessEvent(
   if (result.exitCode === 0) {
     return createCursorHarnessEvent({
       kind: "turn_completed",
-      message: summarizeCursorOutput(result.stdout),
-      sessionId: input.chatId,
+      message: "cursor turn finished",
+      sessionId: result.sessionId ?? input.chatId,
       turnId: `turn-${input.turnNumber}`,
       raw: result,
     });
@@ -62,7 +75,7 @@ export function mapCursorCliResultToHarnessEvent(
     nativeKind: `exit_${result.exitCode}`,
     message: summarizeCursorOutput(result.stderr || result.stdout),
     errorCode: `cursor_exit_${result.exitCode}`,
-    sessionId: input.chatId,
+    sessionId: result.sessionId ?? input.chatId,
     turnId: `turn-${input.turnNumber}`,
     raw: result,
   });

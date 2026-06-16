@@ -24,9 +24,9 @@ harnesses:
     # ...
   cursor:
     command: agent
-    mode: agent
+    mode: force
+    model: null
     sandbox: null
-    output_format: text
     reuse_policy: per_issue   # 或 fresh_each_run
     turn_timeout_ms: 3600000
 ```

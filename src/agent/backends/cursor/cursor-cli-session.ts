@@ -1,6 +1,15 @@
 import { spawn } from "node:child_process";
 
+import type { HarnessRuntimeEvent } from "../../harness/types.js";
 import { decodeChildProcessOutput } from "../../../process/decode-child-output.js";
+import { buildCursorCliArgs } from "./cursor-cli-args.js";
+import {
+  buildInteractionQueryApproval,
+  createCursorStreamParser,
+  parseInteractionQueryRequest,
+} from "./cursor-stream-parser.js";
+import { createCursorHarnessEvent } from "./cursor-event-adapter.js";
+import { resolveCursorSpawnSpec } from "./cursor-command-resolve.js";
 
 export interface CursorCliOutputChunk {
   stream: "stdout" | "stderr";
@@ -10,11 +19,16 @@ export interface CursorCliOutputChunk {
 export interface CursorCliRunInput {
   command: string;
   cwd: string;
-  args: string[];
+  workspace: string;
   prompt: string;
+  chatId: string | null;
+  model: string | null;
+  sandbox?: unknown;
   turnTimeoutMs: number;
   signal?: AbortSignal;
   onOutput?: (chunk: CursorCliOutputChunk) => void;
+  onHarnessEvent?: (event: HarnessRuntimeEvent) => void;
+  onSessionId?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface CursorCliRunResult {
@@ -22,6 +36,8 @@ export interface CursorCliRunResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  sessionId: string | null;
+  terminalEvent: HarnessRuntimeEvent | null;
 }
 
 export type CursorCliRunner = (input: CursorCliRunInput) => Promise<CursorCliRunResult>;
@@ -29,18 +45,38 @@ export type CursorCliRunner = (input: CursorCliRunInput) => Promise<CursorCliRun
 export async function runCursorCli(
   input: CursorCliRunInput,
 ): Promise<CursorCliRunResult> {
+  const args = buildCursorCliArgs({
+    workspace: input.workspace,
+    prompt: input.prompt,
+    chatId: input.chatId,
+    model: input.model,
+    sandbox: input.sandbox,
+  });
+
+  const spawnSpec = resolveCursorSpawnSpec(input.command, args);
+
   return await new Promise<CursorCliRunResult>((resolve, reject) => {
-    const child = spawn(input.command, input.args, {
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: input.cwd,
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: process.platform === "win32",
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: false,
     });
 
     let stdout = "";
     let stderr = "";
+    let stdoutRemainder = "";
     let timedOut = false;
     let settled = false;
+
+    const parser = createCursorStreamParser({
+      onEvent: (event) => {
+        input.onHarnessEvent?.(event);
+      },
+      onSessionId: (sessionId) => {
+        void input.onSessionId?.(sessionId);
+      },
+    });
 
     const finish = (result: CursorCliRunResult) => {
       if (settled) {
@@ -54,12 +90,13 @@ export async function runCursorCli(
 
     const onAbort = () => {
       child.kill("SIGTERM");
-      finish({
+      finish(buildRunResult({
         exitCode: 1,
         stdout,
         stderr: `${stderr}\naborted`.trim(),
         timedOut: false,
-      });
+        parser,
+      }));
     };
 
     input.signal?.addEventListener("abort", onAbort, { once: true });
@@ -67,21 +104,43 @@ export async function runCursorCli(
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      finish({
+      const timeoutEvent = createCursorHarnessEvent({
+        kind: "runtime_error",
+        nativeKind: "turn_timeout",
+        message: "Cursor CLI turn timed out",
+        errorCode: "cursor_turn_timeout",
+        sessionId: parser.getState().sessionId,
+      });
+      input.onHarnessEvent?.(timeoutEvent);
+      finish(buildRunResult({
         exitCode: 1,
         stdout,
         stderr: `${stderr}\nturn timed out`.trim(),
         timedOut: true,
-      });
+        parser,
+        terminalEvent: timeoutEvent,
+      }));
     }, input.turnTimeoutMs);
 
+    const processStdoutLines = (text: string) => {
+      stdoutRemainder += text;
+      const lines = stdoutRemainder.split(/\r?\n/);
+      stdoutRemainder = lines.pop() ?? "";
+      for (const line of lines) {
+        parser.handleLine(line);
+        maybeApproveInteractionQuery(line, child.stdin);
+      }
+    };
+
     child.stdout.on("data", (chunk: Buffer | string) => {
-      const text = decodeChildProcessOutput(chunk);
+      const text = decodeChildProcessOutput(chunk, "utf8");
       stdout += text;
       input.onOutput?.({ stream: "stdout", text });
+      processStdoutLines(text);
     });
+
     child.stderr.on("data", (chunk: Buffer | string) => {
-      const text = decodeChildProcessOutput(chunk);
+      const text = decodeChildProcessOutput(chunk, "utf8");
       stderr += text;
       input.onOutput?.({ stream: "stderr", text });
     });
@@ -96,66 +155,100 @@ export async function runCursorCli(
     });
 
     child.on("close", (code) => {
-      finish({
-        exitCode: code ?? 1,
+      if (stdoutRemainder.trim().length > 0) {
+        parser.handleLine(stdoutRemainder);
+        maybeApproveInteractionQuery(stdoutRemainder, child.stdin);
+      }
+
+      const exitCode = code ?? 1;
+      let terminalEvent = parser.getState().terminalEvent;
+      if (terminalEvent === null && exitCode !== 0) {
+        terminalEvent = createCursorHarnessEvent({
+          kind: "turn_failed",
+          nativeKind: `exit_${exitCode}`,
+          message: summarizeFailureOutput(stderr, stdout),
+          errorCode: `cursor_exit_${exitCode}`,
+          sessionId: parser.getState().sessionId,
+        });
+        input.onHarnessEvent?.(terminalEvent);
+      }
+
+      finish(buildRunResult({
+        exitCode,
         stdout,
         stderr,
         timedOut,
-      });
+        parser,
+        terminalEvent,
+      }));
     });
   });
 }
 
-export function buildCursorCliArgs(input: {
-  prompt: string;
-  chatId: string | null;
-  turnNumber: number;
-  outputFormat: string | null;
-  sandbox: unknown;
-  mode: string | null;
-  yolo: boolean;
-  trust: boolean;
-}): string[] {
-  const args: string[] = [];
-  if (input.trust) {
-    args.push("--trust");
-  }
-  if (input.yolo) {
-    args.push("--yolo");
-  }
-  args.push("-p", input.prompt);
-  args.push("-force");
-  if (input.outputFormat !== null && input.outputFormat.trim() !== "") {
-    args.push("--output-format", input.outputFormat);
-  }
-  if (input.mode !== null && input.mode.trim() !== "") {
-    args.push("--mode", input.mode);
-  }
-  if (input.sandbox !== undefined && input.sandbox !== null) {
-    args.push("--sandbox", String(input.sandbox));
-  }
-  if (input.turnNumber > 1) {
-    if (input.chatId !== null) {
-      args.push(`--resume=${input.chatId}`);
-    } else {
-      args.push("--continue");
-    }
-  }
-  return args;
+function buildRunResult(input: {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  parser: ReturnType<typeof createCursorStreamParser>;
+  terminalEvent?: HarnessRuntimeEvent | null;
+}): CursorCliRunResult {
+  const state = input.parser.getState();
+  return {
+    exitCode: input.exitCode,
+    stdout: input.stdout,
+    stderr: input.stderr,
+    timedOut: input.timedOut,
+    sessionId: state.sessionId,
+    terminalEvent: input.terminalEvent ?? state.terminalEvent,
+  };
 }
 
-const CHAT_ID_PATTERNS = [
-  /chat[_\s-]?id[:\s]+([A-Za-z0-9_-]+)/i,
-  /session[:\s]+([A-Za-z0-9_-]+)/i,
-  /"chatId"\s*:\s*"([^"]+)"/i,
-];
-
-export function extractChatIdFromCliOutput(output: string): string | null {
-  for (const pattern of CHAT_ID_PATTERNS) {
-    const match = output.match(pattern);
-    if (match?.[1] !== undefined && match[1].trim().length > 0) {
-      return match[1].trim();
-    }
+function maybeApproveInteractionQuery(
+  line: string,
+  stdin: NodeJS.WritableStream | null,
+): void {
+  const trimmed = line.trim();
+  if (trimmed === "" || stdin === null) {
+    return;
   }
-  return null;
+
+  const writable = stdin as NodeJS.WritableStream & { destroyed?: boolean };
+  if (writable.destroyed === true) {
+    return;
+  }
+
+  let raw: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return;
+    }
+    raw = parsed as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  const request = parseInteractionQueryRequest(raw);
+  if (request === null) {
+    return;
+  }
+
+  stdin.write(
+    buildInteractionQueryApproval({
+      queryId: request.queryId,
+      queryType: request.queryType,
+    }),
+  );
 }
+
+function summarizeFailureOutput(stderr: string, stdout: string): string {
+  const trimmed = `${stderr}\n${stdout}`.trim();
+  if (trimmed.length === 0) {
+    return "cursor turn failed";
+  }
+  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim() !== "");
+  return lines.at(-1)?.trim() ?? trimmed;
+}
+
+export { buildCursorCliArgs } from "./cursor-cli-args.js";

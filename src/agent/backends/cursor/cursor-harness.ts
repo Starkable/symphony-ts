@@ -22,6 +22,7 @@ import type {
   HarnessAgentEvent,
   HarnessRunInput,
   HarnessRunResult,
+  HarnessRuntimeEvent,
   HarnessTurnOutcome,
 } from "../../harness/types.js";
 import { AgentRunnerError } from "../../runner.js";
@@ -29,9 +30,9 @@ import {
   type CursorCliRunner,
   type CursorCliRunResult,
   buildCursorCliArgs,
-  extractChatIdFromCliOutput,
   runCursorCli,
 } from "./cursor-cli-session.js";
+import { resolveCursorSpawnSpec } from "./cursor-command-resolve.js";
 import {
   createCursorHarnessEvent,
   mapCursorCliResultToHarnessEvent,
@@ -185,25 +186,37 @@ export class CursorAgentHarness implements AgentHarness {
           chatId,
         });
         const args = buildCursorCliArgs({
+          workspace: workspacePath,
           prompt,
           chatId,
-          turnNumber,
-          outputFormat: this.config.harnesses.cursor.outputFormat,
+          model: this.config.harnesses.cursor.model,
           sandbox: this.config.harnesses.cursor.sandbox,
-          mode: this.config.harnesses.cursor.mode,
-          yolo: this.config.harnesses.cursor.yolo,
-          trust: this.config.harnesses.cursor.trust,
         });
 
         runAttempt.status =
           turnNumber === 1 ? "initializing_session" : "streaming_turn";
 
         const cursorConfig = this.config.harnesses.cursor;
+        if (
+          this.logger !== null &&
+          cursorConfig.sandbox !== undefined &&
+          cursorConfig.sandbox !== null
+        ) {
+          await this.logger.warn(
+            "cursor_sandbox_experimental",
+            "harnesses.cursor.sandbox is experimental and may not be supported by all CLI versions.",
+            { sandbox: cursorConfig.sandbox },
+          );
+        }
         const redactedArgs = redactCursorCliArgs(args, {
           includePrompt: cursorConfig.turnLogIncludePrompt,
         });
-        const cliInvocation = formatCursorInvocation(
+        const spawnSpec = resolveCursorSpawnSpec(
           cursorConfig.command,
+          redactedArgs,
+        );
+        const cliInvocation = formatCursorInvocation(
+          spawnSpec.resolvedPath,
           redactedArgs,
         );
         const turnStartedAt = new Date().toISOString();
@@ -224,19 +237,47 @@ export class CursorAgentHarness implements AgentHarness {
           workspacePath,
           turnNumber,
           chatId,
-          cliCommand: cursorConfig.command,
+          cliCommand: spawnSpec.resolvedPath,
+          cliCommandConfig: cursorConfig.command,
           cliArgs: redactedArgs,
           promptChars: prompt.length,
         });
 
         const turnStartedMs = Date.now();
+        let streamedTerminalEvent: HarnessRuntimeEvent | null = null;
         const cliResult = await this.runCli({
           command: cursorConfig.command,
           cwd: workspacePath,
-          args,
+          workspace: workspacePath,
           prompt,
+          chatId,
+          model: cursorConfig.model,
+          sandbox: cursorConfig.sandbox,
           turnTimeoutMs: cursorConfig.turnTimeoutMs,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
+          onSessionId: async (sessionId) => {
+            chatId = sessionId;
+            await writeCursorSession(workspacePath, {
+              chatId: sessionId,
+              updatedAt: new Date().toISOString(),
+            });
+          },
+          onHarnessEvent: (event) => {
+            const enriched = {
+              ...event,
+              turnId: event.turnId ?? `turn-${turnNumber}`,
+            };
+            applyHarnessEventToSession(liveSession, enriched);
+            this.emitHarnessEvent(enriched, {
+              issue,
+              attempt: input.attempt,
+              workspacePath,
+              liveSession,
+            });
+            if (isTerminalHarnessEvent(enriched.kind)) {
+              streamedTerminalEvent = enriched;
+            }
+          },
           ...(artifactPath === null || !cursorConfig.turnLogWorkspaceArtifact
             ? {}
             : {
@@ -249,6 +290,10 @@ export class CursorAgentHarness implements AgentHarness {
                 },
               }),
         });
+
+        if (cliResult.sessionId !== null) {
+          chatId = cliResult.sessionId;
+        }
 
         const combinedOutput = `${cliResult.stdout}\n${cliResult.stderr}`;
         const thinking = extractThinkingFromCursorOutput(combinedOutput);
@@ -278,26 +323,19 @@ export class CursorAgentHarness implements AgentHarness {
           artifactPath,
         });
 
-        const harnessEvent = mapCursorCliResultToHarnessEvent(cliResult, {
-          turnNumber,
-          chatId,
-        });
-        applyHarnessEventToSession(liveSession, harnessEvent);
-        this.emitHarnessEvent(harnessEvent, {
-          issue,
-          attempt: input.attempt,
-          workspacePath,
-          liveSession,
-        });
-
-        const discoveredChatId = extractChatIdFromCliOutput(
-          `${cliResult.stdout}\n${cliResult.stderr}`,
-        );
-        if (discoveredChatId !== null) {
-          chatId = discoveredChatId;
-          await writeCursorSession(workspacePath, {
+        const harnessEvent =
+          streamedTerminalEvent ??
+          mapCursorCliResultToHarnessEvent(cliResult, {
+            turnNumber,
             chatId,
-            updatedAt: new Date().toISOString(),
+          });
+        if (streamedTerminalEvent === null) {
+          applyHarnessEventToSession(liveSession, harnessEvent);
+          this.emitHarnessEvent(harnessEvent, {
+            issue,
+            attempt: input.attempt,
+            workspacePath,
+            liveSession,
           });
         }
 
@@ -311,7 +349,7 @@ export class CursorAgentHarness implements AgentHarness {
           sessionId: chatId,
           threadId: chatId,
           turnId: `turn-${turnNumber}`,
-          usage: null,
+          usage: harnessEvent.usage ?? null,
           rateLimits: null,
           message: harnessEvent.message ?? null,
           exitCode: cliResult.exitCode,
@@ -412,6 +450,7 @@ export class CursorAgentHarness implements AgentHarness {
     turnNumber: number;
     chatId: string | null;
     cliCommand: string;
+    cliCommandConfig: string;
     cliArgs: string[];
     promptChars: number;
   }): Promise<void> {
@@ -429,6 +468,7 @@ export class CursorAgentHarness implements AgentHarness {
       turn_id: `turn-${input.turnNumber}`,
       chat_id: input.chatId,
       cli_command: input.cliCommand,
+      cli_command_config: input.cliCommandConfig,
       cli_args: input.cliArgs,
       prompt_chars: input.promptChars,
     });
@@ -562,6 +602,15 @@ export class CursorAgentHarness implements AgentHarness {
       cause: input.error,
     });
   }
+}
+
+function isTerminalHarnessEvent(kind: HarnessRuntimeEvent["kind"]): boolean {
+  return (
+    kind === "turn_completed" ||
+    kind === "turn_failed" ||
+    kind === "turn_cancelled" ||
+    kind === "runtime_error"
+  );
 }
 
 async function cleanupWorkspaceArtifacts(workspacePath: string): Promise<void> {

@@ -111,26 +111,18 @@ harnesses:
     stall_timeout_ms: 300000
 
   cursor:
-    # Cursor CLI command (non-interactive print mode uses -p).
+    # Cursor Agent CLI (`agent`). Use an absolute path in production if PATH is limited.
     # Default: agent
     command: agent
 
-    # Optional CLI mode flag.
-    mode: agent
+    # Unattended Symphony requires force mode (maps to CLI --force).
+    mode: force
 
-    # Trust: pass --trust for Cursor CLI (distinct from Symphony's --acknowledge-high-trust-preview).
-    # Default: true. Set false if your agent version rejects --trust.
-    trust: true
+    # Optional model id from `agent models` (not the display name).
+    model: null
 
-    # YOLO: pass --yolo so Cursor CLI auto-approves tool calls (unattended).
-    # Default: true. Set to false if you need interactive approval prompts.
-    yolo: true
-
-    # Optional sandbox flag passed to Cursor CLI.
+    # Experimental; passed as --sandbox when set.
     sandbox: null
-
-    # Optional output format (for example text or json).
-    output_format: text
 
     # Session reuse across workers for the same issue.
     # Values: per_issue | fresh_each_run
@@ -147,7 +139,7 @@ harnesses:
     # Default: 32768
     turn_log_max_bytes: 32768
 
-    # Include full -p prompt in structured logs (sensitive; default false).
+    # Include full prompt after `--` in structured logs (sensitive; default false).
     turn_log_include_prompt: false
 
     # Write full CLI output to <workspace>/.symphony/cursor-turn-N.log (UTF-8).

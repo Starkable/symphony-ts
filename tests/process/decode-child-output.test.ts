@@ -22,4 +22,16 @@ describe("decodeChildProcessOutput", () => {
     );
     expect(text).toBe("中文输出");
   });
+
+  it("decodes utf8 buffers on win32 when encoding is utf8", () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const text = decodeChildProcessOutput(
+      Buffer.from("中文输出", "utf8"),
+      "utf8",
+    );
+    expect(text).toBe("中文输出");
+  });
 });

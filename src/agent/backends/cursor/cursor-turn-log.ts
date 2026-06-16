@@ -13,9 +13,9 @@ export function redactCursorCliArgs(
 
   while (index < args.length) {
     const token = args[index];
-    if (token === "-p" && index + 1 < args.length) {
+    if (token === "--" && index + 1 < args.length) {
       const prompt = args[index + 1] ?? "";
-      redacted.push("-p");
+      redacted.push("--");
       if (input.includePrompt) {
         const limit = input.maxPromptChars ?? prompt.length;
         redacted.push(

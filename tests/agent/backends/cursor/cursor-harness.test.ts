@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../../../../src/agent/backends/cursor/cursor-command-resolve.js", () => ({
+  resolveCursorSpawnSpec: vi.fn((configCommand: string, cliArgs: string[]) => ({
+    command: configCommand,
+    args: cliArgs,
+    resolvedPath: configCommand,
+  })),
+}));
+
 import { CursorAgentHarness } from "../../../../src/agent/backends/cursor/cursor-harness.js";
-import type { CursorCliRunResult } from "../../../../src/agent/backends/cursor/cursor-cli-session.js";
+import type {
+  CursorCliRunInput,
+  CursorCliRunResult,
+} from "../../../../src/agent/backends/cursor/cursor-cli-session.js";
+import { createCursorHarnessEvent } from "../../../../src/agent/backends/cursor/cursor-event-adapter.js";
 import { StructuredLogger } from "../../../../src/logging/structured-logger.js";
 import type { StructuredLogEntry } from "../../../../src/logging/structured-logger.js";
 import {
@@ -11,75 +23,52 @@ import {
 } from "../../../helpers/workflow-config.js";
 import type { Issue } from "../../../../src/domain/model.js";
 
+function createMockCliResult(
+  input: CursorCliRunInput,
+  overrides: Partial<CursorCliRunResult> = {},
+): CursorCliRunResult {
+  const terminalEvent = createCursorHarnessEvent({
+    kind: "turn_completed",
+    message: "done",
+    sessionId: "chat-123",
+  });
+  input.onSessionId?.("chat-123");
+  input.onHarnessEvent?.(
+    createCursorHarnessEvent({
+      kind: "notification",
+      message: "Cursor session init (test)",
+    }),
+  );
+  input.onHarnessEvent?.(
+    createCursorHarnessEvent({
+      kind: "other_message",
+      message: "working",
+    }),
+  );
+  input.onHarnessEvent?.(terminalEvent);
+
+  return {
+    exitCode: 0,
+    stdout: '{"type":"result"}',
+    stderr: "",
+    timedOut: false,
+    sessionId: "chat-123",
+    terminalEvent,
+    ...overrides,
+  };
+}
+
 describe("CursorAgentHarness", () => {
-  it("runs non-interactive turns and persists discovered chat ids", async () => {
+  it("runs stream-json turns and persists session ids", async () => {
     const events: string[] = [];
     const runCli = vi
-      .fn<() => Promise<CursorCliRunResult>>()
-      .mockResolvedValueOnce({
-        exitCode: 0,
-        stdout: 'Chat ID: chat-123\ncompleted',
-        stderr: "",
-        timedOut: false,
-      });
+      .fn<(input: CursorCliRunInput) => Promise<CursorCliRunResult>>()
+      .mockImplementationOnce(async (input) => createMockCliResult(input));
 
     const harness = new CursorAgentHarness({
-      config: withHarnessConfig({
-        workflowPath: "/tmp/WORKFLOW.md",
-        promptTemplate: "Prompt {{ issue.identifier }}",
-        tracker: {
-          kind: "linear",
-          endpoint: "https://api.linear.app/graphql",
-          apiKey: "token",
-          projectSlug: "ENG",
-          activeStates: ["In Progress"],
-          terminalStates: ["Done"],
-        },
-        polling: { intervalMs: 30_000 },
-        workspace: { root: "/tmp/workspaces" },
-        hooks: {
-          afterCreate: null,
-          beforeRun: null,
-          afterRun: null,
-          beforeRemove: null,
-          timeoutMs: 1_000,
-        },
-        agent: {
-          harness: "cursor",
-          maxConcurrentAgents: 1,
-          maxTurns: 1,
-          maxRetryBackoffMs: 300_000,
-          maxConcurrentAgentsByState: {},
-        },
-        codex: DEFAULT_TEST_CODEX_CONFIG,
-        harnesses: {
-          codex: DEFAULT_TEST_CODEX_CONFIG,
-          cursor: DEFAULT_TEST_CURSOR_CONFIG,
-        },
-        server: { port: null },
-        observability: {
-          dashboardEnabled: true,
-          refreshMs: 1_000,
-          renderIntervalMs: 16,
-        },
-      }),
-      tracker: {
-        fetchCandidateIssues: async () => [],
-        fetchIssuesByStates: async () => [],
-        fetchIssueStatesByIds: async () => [
-          { id: "1", identifier: "ISSUE-1", state: "Done" },
-        ],
-      },
-      workspaceManager: {
-        createForIssue: async () => ({
-          path: "/tmp/workspaces/1",
-          workspaceKey: "1",
-          createdNow: true,
-        }),
-        resolveForIssue: () => ({
-          workspacePath: "/tmp/workspaces/1",
-        }),
-      } as never,
+      config: buildHarnessConfig(),
+      tracker: buildTracker(),
+      workspaceManager: buildWorkspaceManager(),
       runCli,
       onEvent: (event) => {
         events.push(event.kind);
@@ -93,10 +82,15 @@ describe("CursorAgentHarness", () => {
 
     expect(runCli).toHaveBeenCalledTimes(1);
     expect(runCli.mock.calls[0]?.[0]).toMatchObject({
-      args: expect.arrayContaining(["--trust", "--yolo"]),
+      workspace: "/tmp/workspaces/1",
+      model: null,
+      prompt: expect.any(String),
     });
     expect(events).toContain("session_started");
+    expect(events).toContain("notification");
+    expect(events).toContain("other_message");
     expect(events).toContain("turn_completed");
+    expect(events.filter((kind) => kind === "other_message").length).toBeGreaterThanOrEqual(1);
     expect(result.lastTurn?.sessionId).toBe("chat-123");
     expect(result.turnsCompleted).toBe(1);
   });
@@ -112,74 +106,20 @@ describe("CursorAgentHarness", () => {
     ]);
 
     const runCli = vi
-      .fn<() => Promise<CursorCliRunResult>>()
-      .mockResolvedValueOnce({
-        exitCode: 0,
-        stdout: 'Chat ID: chat-456\n```thinking\n计划步骤\n```\ndone',
-        stderr: "",
-        timedOut: false,
-      });
+      .fn<(input: CursorCliRunInput) => Promise<CursorCliRunResult>>()
+      .mockImplementationOnce(async (input) =>
+        createMockCliResult(input, {
+          stdout:
+            '{"type":"thinking","subtype":"completed"}\n{"type":"result","result":"done"}',
+        }),
+      );
 
     const harness = new CursorAgentHarness({
-      config: withHarnessConfig({
-        workflowPath: "/tmp/WORKFLOW.md",
-        promptTemplate: "Prompt {{ issue.identifier }}",
-        tracker: {
-          kind: "linear",
-          endpoint: "https://api.linear.app/graphql",
-          apiKey: "token",
-          projectSlug: "ENG",
-          activeStates: ["In Progress"],
-          terminalStates: ["Done"],
-        },
-        polling: { intervalMs: 30_000 },
-        workspace: { root: "/tmp/workspaces" },
-        hooks: {
-          afterCreate: null,
-          beforeRun: null,
-          afterRun: null,
-          beforeRemove: null,
-          timeoutMs: 1_000,
-        },
-        agent: {
-          harness: "cursor",
-          maxConcurrentAgents: 1,
-          maxTurns: 1,
-          maxRetryBackoffMs: 300_000,
-          maxConcurrentAgentsByState: {},
-        },
-        codex: DEFAULT_TEST_CODEX_CONFIG,
-        harnesses: {
-          codex: DEFAULT_TEST_CODEX_CONFIG,
-          cursor: {
-            ...DEFAULT_TEST_CURSOR_CONFIG,
-            turnLogWorkspaceArtifact: false,
-          },
-        },
-        server: { port: null },
-        observability: {
-          dashboardEnabled: true,
-          refreshMs: 1_000,
-          renderIntervalMs: 16,
-        },
+      config: buildHarnessConfig({
+        turnLogWorkspaceArtifact: false,
       }),
-      tracker: {
-        fetchCandidateIssues: async () => [],
-        fetchIssuesByStates: async () => [],
-        fetchIssueStatesByIds: async () => [
-          { id: "1", identifier: "ISSUE-1", state: "Done" },
-        ],
-      },
-      workspaceManager: {
-        createForIssue: async () => ({
-          path: "/tmp/workspaces/1",
-          workspaceKey: "1",
-          createdNow: true,
-        }),
-        resolveForIssue: () => ({
-          workspacePath: "/tmp/workspaces/1",
-        }),
-      } as never,
+      tracker: buildTracker(),
+      workspaceManager: buildWorkspaceManager(),
       logger,
       runCli,
       onEvent: () => {},
@@ -197,13 +137,82 @@ describe("CursorAgentHarness", () => {
 
     expect(startLog).toBeDefined();
     expect(startLog?.cli_args).toEqual(
-      expect.arrayContaining(["-p", expect.stringContaining("prompt chars=")]),
+      expect.arrayContaining(["--", expect.stringContaining("prompt chars=")]),
     );
     expect(finishLog).toBeDefined();
-    expect(finishLog?.thinking).toContain("计划步骤");
     expect(finishLog?.exit_code).toBe(0);
   });
 });
+
+function buildHarnessConfig(
+  cursorOverrides: Partial<typeof DEFAULT_TEST_CURSOR_CONFIG> = {},
+) {
+  return withHarnessConfig({
+    workflowPath: "/tmp/WORKFLOW.md",
+    promptTemplate: "Prompt {{ issue.identifier }}",
+    tracker: {
+      kind: "linear",
+      endpoint: "https://api.linear.app/graphql",
+      apiKey: "token",
+      projectSlug: "ENG",
+      activeStates: ["In Progress"],
+      terminalStates: ["Done"],
+    },
+    polling: { intervalMs: 30_000 },
+    workspace: { root: "/tmp/workspaces" },
+    hooks: {
+      afterCreate: null,
+      beforeRun: null,
+      afterRun: null,
+      beforeRemove: null,
+      timeoutMs: 1_000,
+    },
+    agent: {
+      harness: "cursor",
+      maxConcurrentAgents: 1,
+      maxTurns: 1,
+      maxRetryBackoffMs: 300_000,
+      maxConcurrentAgentsByState: {},
+    },
+    codex: DEFAULT_TEST_CODEX_CONFIG,
+    harnesses: {
+      codex: DEFAULT_TEST_CODEX_CONFIG,
+      cursor: {
+        ...DEFAULT_TEST_CURSOR_CONFIG,
+        ...cursorOverrides,
+      },
+    },
+    server: { port: null },
+    observability: {
+      dashboardEnabled: true,
+      refreshMs: 1_000,
+      renderIntervalMs: 16,
+    },
+  });
+}
+
+function buildTracker() {
+  return {
+    fetchCandidateIssues: async () => [],
+    fetchIssuesByStates: async () => [],
+    fetchIssueStatesByIds: async () => [
+      { id: "1", identifier: "ISSUE-1", state: "Done" },
+    ],
+  };
+}
+
+function buildWorkspaceManager() {
+  return {
+    createForIssue: async () => ({
+      path: "/tmp/workspaces/1",
+      workspaceKey: "1",
+      createdNow: true,
+    }),
+    resolveForIssue: () => ({
+      workspacePath: "/tmp/workspaces/1",
+    }),
+  } as never;
+}
 
 function createIssue(): Issue {
   return {

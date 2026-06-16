@@ -1,23 +1,21 @@
 import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
-import type { WorkflowDefinition } from "../domain/model.js";
-import { normalizeIssueState } from "../domain/model.js";
+import { isCursorCommandAvailable } from "../agent/backends/cursor/cursor-command-resolve.js";
+import { normalizeIssueState, type WorkflowDefinition } from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
 import {
   DEFAULT_ACTIVE_STATES,
   DEFAULT_CODEX_COMMAND,
   DEFAULT_CURSOR_COMMAND,
   DEFAULT_CURSOR_MODE,
-  DEFAULT_CURSOR_OUTPUT_FORMAT,
+  DEFAULT_CURSOR_MODEL,
   DEFAULT_CURSOR_REUSE_POLICY,
   DEFAULT_CURSOR_TURN_TIMEOUT_MS,
   DEFAULT_CURSOR_TURN_LOG_ENABLED,
   DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT,
   DEFAULT_CURSOR_TURN_LOG_MAX_BYTES,
   DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
-  DEFAULT_CURSOR_YOLO,
-  DEFAULT_CURSOR_TRUST,
   DEFAULT_HOOK_TIMEOUT_MS,
   DEFAULT_LINEAR_ENDPOINT,
   DEFAULT_LINEAR_NETWORK_TIMEOUT_MS,
@@ -39,6 +37,7 @@ import {
 } from "./defaults.js";
 import type {
   AgentHarnessKind,
+  CursorHarnessMode,
   CursorReusePolicy,
   DispatchValidationResult,
   ResolvedWorkflowConfig,
@@ -143,6 +142,7 @@ export function resolveWorkflowConfig(
 
 export function validateDispatchConfig(
   config: ResolvedWorkflowConfig,
+  rawHarnessesCursor: Record<string, unknown> = {},
 ): DispatchValidationResult {
   const trackerKind = config.tracker.kind?.trim();
   if (!trackerKind) {
@@ -179,11 +179,12 @@ export function validateDispatchConfig(
   };
 
   if (config.agent.harness === "cursor") {
-    if (harnesses.cursor.command.trim() === "") {
-      return invalid(
-        ERROR_CODES.configInvalid,
-        "harnesses.cursor.command must be present and non-empty before dispatch.",
-      );
+    const cursorError = validateCursorHarnessConfig(
+      harnesses.cursor,
+      rawHarnessesCursor,
+    );
+    if (cursorError !== null) {
+      return cursorError;
     }
     return { ok: true };
   }
@@ -226,13 +227,9 @@ function resolveCursorHarnessConfig(
 ): WorkflowCursorHarnessConfig {
   return {
     command: readString(harnessesCursor.command) ?? DEFAULT_CURSOR_COMMAND,
-    mode: readString(harnessesCursor.mode) ?? DEFAULT_CURSOR_MODE,
-    yolo: readBoolean(harnessesCursor.yolo) ?? DEFAULT_CURSOR_YOLO,
-    trust: readBoolean(harnessesCursor.trust) ?? DEFAULT_CURSOR_TRUST,
+    mode: readCursorMode(harnessesCursor.mode),
+    model: readString(harnessesCursor.model) ?? DEFAULT_CURSOR_MODEL,
     sandbox: harnessesCursor.sandbox,
-    outputFormat:
-      readString(harnessesCursor.output_format) ??
-      DEFAULT_CURSOR_OUTPUT_FORMAT,
     reusePolicy: readCursorReusePolicy(harnessesCursor.reuse_policy),
     turnTimeoutMs:
       readPositiveInteger(harnessesCursor.turn_timeout_ms) ??
@@ -258,6 +255,52 @@ function readHarnessKind(value: unknown): AgentHarnessKind {
     return "cursor";
   }
   return "codex";
+}
+
+function readCursorMode(value: unknown): CursorHarnessMode {
+  const mode = readString(value)?.trim().toLowerCase();
+  if (mode === "force") {
+    return "force";
+  }
+  return DEFAULT_CURSOR_MODE;
+}
+
+function validateCursorHarnessConfig(
+  cursor: WorkflowCursorHarnessConfig,
+  rawHarnessesCursor: Record<string, unknown>,
+): DispatchValidationResult | null {
+  for (const deprecated of ["trust", "yolo", "output_format"] as const) {
+    if (deprecated in rawHarnessesCursor) {
+      return invalid(
+        ERROR_CODES.configInvalid,
+        `harnesses.cursor.${deprecated} was removed; use mode: force and stream-json CLI protocol.`,
+      );
+    }
+  }
+
+  const rawMode = readString(rawHarnessesCursor.mode)?.trim().toLowerCase();
+  if (rawMode !== undefined && rawMode !== "" && rawMode !== "force") {
+    return invalid(
+      ERROR_CODES.configInvalid,
+      `harnesses.cursor.mode must be 'force' for unattended Symphony dispatch (got '${rawMode}').`,
+    );
+  }
+
+  if (cursor.command.trim() === "") {
+    return invalid(
+      ERROR_CODES.configInvalid,
+      "harnesses.cursor.command must be present and non-empty before dispatch.",
+    );
+  }
+
+  if (!isCursorCommandAvailable(cursor.command)) {
+    return invalid(
+      ERROR_CODES.configInvalid,
+      `harnesses.cursor.command '${cursor.command}' is not executable. Install Cursor CLI or set an absolute path.`,
+    );
+  }
+
+  return null;
 }
 
 function readCursorReusePolicy(value: unknown): CursorReusePolicy {

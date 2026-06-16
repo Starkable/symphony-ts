@@ -25,14 +25,10 @@ export const DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE = Object.freeze(
 
 export const DEFAULT_CODEX_COMMAND = "codex app-server";
 export const DEFAULT_CURSOR_COMMAND = "agent";
-export const DEFAULT_CURSOR_MODE = "agent";
-export const DEFAULT_CURSOR_OUTPUT_FORMAT = "text";
+export const DEFAULT_CURSOR_MODE = "force" as const;
+export const DEFAULT_CURSOR_MODEL = null;
 export const DEFAULT_CURSOR_REUSE_POLICY = "per_issue" as const;
 export const DEFAULT_CURSOR_TURN_TIMEOUT_MS = 3_600_000;
-/** Default on: unattended orchestration expects auto-approved tool calls. */
-export const DEFAULT_CURSOR_YOLO = true;
-/** Default on: align with unattended runs; set false if CLI rejects --trust. */
-export const DEFAULT_CURSOR_TRUST = true;
 export const DEFAULT_CURSOR_TURN_LOG_ENABLED = true;
 export const DEFAULT_CURSOR_TURN_LOG_MAX_BYTES = 32_768;
 export const DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT = false;

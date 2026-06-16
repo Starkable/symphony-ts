@@ -1,15 +1,13 @@
 import {
   DEFAULT_CURSOR_COMMAND,
   DEFAULT_CURSOR_MODE,
-  DEFAULT_CURSOR_OUTPUT_FORMAT,
+  DEFAULT_CURSOR_MODEL,
   DEFAULT_CURSOR_REUSE_POLICY,
   DEFAULT_CURSOR_TURN_TIMEOUT_MS,
   DEFAULT_CURSOR_TURN_LOG_ENABLED,
   DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT,
   DEFAULT_CURSOR_TURN_LOG_MAX_BYTES,
   DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
-  DEFAULT_CURSOR_YOLO,
-  DEFAULT_CURSOR_TRUST,
 } from "../../src/config/defaults.js";
 import type {
   ResolvedWorkflowConfig,
@@ -30,10 +28,8 @@ export const DEFAULT_TEST_CODEX_CONFIG: WorkflowCodexConfig = {
 export const DEFAULT_TEST_CURSOR_CONFIG: WorkflowHarnessesConfig["cursor"] = {
   command: DEFAULT_CURSOR_COMMAND,
   mode: DEFAULT_CURSOR_MODE,
-  yolo: DEFAULT_CURSOR_YOLO,
-  trust: DEFAULT_CURSOR_TRUST,
+  model: DEFAULT_CURSOR_MODEL,
   sandbox: null,
-  outputFormat: DEFAULT_CURSOR_OUTPUT_FORMAT,
   reusePolicy: DEFAULT_CURSOR_REUSE_POLICY,
   turnTimeoutMs: DEFAULT_CURSOR_TURN_TIMEOUT_MS,
   turnLogEnabled: DEFAULT_CURSOR_TURN_LOG_ENABLED,
@@ -51,8 +47,8 @@ export function withHarnessConfig(
   return {
     ...config,
     agent: {
-      harness: "codex",
       ...config.agent,
+      harness: config.agent.harness ?? "codex",
     },
     harnesses: {
       codex,

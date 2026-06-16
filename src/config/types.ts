@@ -27,6 +27,9 @@ export type AgentHarnessKind = "codex" | "cursor";
 
 export type CursorReusePolicy = "per_issue" | "fresh_each_run";
 
+/** Unattended Symphony runs Cursor CLI in force mode only. */
+export type CursorHarnessMode = "force";
+
 export interface WorkflowAgentConfig {
   harness: AgentHarnessKind;
   maxConcurrentAgents: number;
@@ -47,20 +50,18 @@ export interface WorkflowCodexConfig {
 
 export interface WorkflowCursorHarnessConfig {
   command: string;
-  mode: string | null;
-  /** When true, pass `--yolo` so Cursor CLI auto-approves tool calls (unattended). */
-  yolo: boolean;
-  /** When true, pass `--trust` for Cursor CLI trusted/unattended workspace behavior. */
-  trust: boolean;
+  mode: CursorHarnessMode;
+  /** Optional CLI model id (from `agent models`); omitted when null. */
+  model: string | null;
+  /** Experimental; passed as `--sandbox` when set. */
   sandbox: unknown;
-  outputFormat: string | null;
   reusePolicy: CursorReusePolicy;
   turnTimeoutMs: number;
   /** Emit structured per-turn logs (cursor_turn_start / cursor_turn_finished). */
   turnLogEnabled: boolean;
   /** Max UTF-8 bytes per stdout/stderr/thinking field in structured logs. */
   turnLogMaxBytes: number;
-  /** Include full prompt in structured logs (default redacts -p value). */
+  /** Include full prompt (after `--`) in structured logs (default redacts). */
   turnLogIncludePrompt: boolean;
   /** Write full turn output to workspace .symphony/cursor-turn-N.log. */
   turnLogWorkspaceArtifact: boolean;
