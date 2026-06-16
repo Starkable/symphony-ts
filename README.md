@@ -175,9 +175,13 @@ See [docs/DEV_GUIDE.md](docs/DEV_GUIDE.md) for a full walkthrough including Line
 | Item | Status |
 | --- | --- |
 | Implement Symphony and Linear integration | ✅ Complete |
+| Cursor CLI agent harness | 🟡 In progress ([fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)) |
+| Cursor Policy workflow (clarify → verify → PR) | ✅ Documented — see [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md) |
 | Support more platforms such as GitHub Projects | 🟡 Planned |
 | Support a local board GUI | 🟡 Planned |
 | Support more coding agents such as Claude Code scheduling | 🟡 Planned |
+
+Agent 无人值守 Policy（Workpad、Subagent 验证、skills）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。暂缓项（需求平台、orchestrator 门控等）见该文档 TODO 节。
 
 If there is a platform you want Symphony to support, open an issue and let us know.
 
