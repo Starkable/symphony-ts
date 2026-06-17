@@ -37,6 +37,7 @@ describe("config-resolver", () => {
     });
 
     expect(resolved.tracker.kind).toBe("linear");
+    expect(resolved.tracker.oauth).toBeNull();
     expect(resolved.tracker.endpoint).toBe("https://api.linear.app/graphql");
     expect(resolved.tracker.activeStates).toEqual(["Todo", "In Progress"]);
     expect(resolved.tracker.terminalStates).toEqual([
@@ -241,8 +242,8 @@ describe("config-resolver", () => {
     expect(validation).toEqual({
       ok: false,
       error: {
-        code: ERROR_CODES.trackerCredentialsMissing,
-        message: "tracker.api_key must be configured before dispatch.",
+        code: ERROR_CODES.configInvalid,
+        message: "tracker.project_slug must be configured before dispatch.",
       },
     });
   });
@@ -427,6 +428,93 @@ describe("config-resolver", () => {
               kind: "linear",
               api_key: "token",
               project_slug: "ENG",
+            },
+          },
+        },
+        {},
+      ),
+    );
+
+    expect(validation).toEqual({ ok: true });
+  });
+
+  it("resolves PMS oauth credentials from env references and canonical env vars", () => {
+    const keyPath = join(homedir(), ".symphony-test.key");
+    const resolved = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          tracker: {
+            kind: "pms",
+            project_slug: "BASELINEREQ",
+            oauth: {
+              access_token: "$PMS_OAUTH_ACCESS_TOKEN",
+              access_token_secret: "$PMS_OAUTH_ACCESS_TOKEN_SECRET",
+              rsa_private_key_path: "$PMS_JIRA_KEY_PATH",
+            },
+          },
+        },
+      },
+      {
+        PMS_OAUTH_ACCESS_TOKEN: "token-value",
+        PMS_OAUTH_ACCESS_TOKEN_SECRET: "secret-value",
+        PMS_JIRA_KEY_PATH: keyPath,
+      },
+    );
+
+    expect(resolved.tracker.kind).toBe("pms");
+    expect(resolved.tracker.endpoint).toBe("http://pms.qiyi.domain");
+    expect(resolved.tracker.oauth).toEqual({
+      accessToken: "token-value",
+      accessTokenSecret: "secret-value",
+      rsaPrivateKeyPath: keyPath,
+      consumerKey: "qa-monitor",
+      validateOnDispatch: true,
+    });
+  });
+
+  it("blocks PMS dispatch when oauth credentials are missing", () => {
+    const validation = validateDispatchConfig(
+      resolveWorkflowConfig(
+        {
+          workflowPath: "/repo/WORKFLOW.md",
+          promptTemplate: "Prompt",
+          config: {
+            tracker: {
+              kind: "pms",
+              project_slug: "BASELINEREQ",
+            },
+          },
+        },
+        {},
+      ),
+    );
+
+    expect(validation).toEqual({
+      ok: false,
+      error: {
+        code: ERROR_CODES.trackerCredentialsMissing,
+        message: "tracker.oauth.access_token must be configured before dispatch.",
+      },
+    });
+  });
+
+  it("accepts PMS dispatch when oauth credentials are present", () => {
+    const validation = validateDispatchConfig(
+      resolveWorkflowConfig(
+        {
+          workflowPath: "/repo/WORKFLOW.md",
+          promptTemplate: "Prompt",
+          config: {
+            tracker: {
+              kind: "pms",
+              project_slug: "BASELINEREQ",
+              oauth: {
+                access_token: "token",
+                access_token_secret: "secret",
+                rsa_private_key_path: join(homedir(), "test.key"),
+              },
             },
           },
         },

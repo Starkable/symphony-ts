@@ -2,7 +2,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const DEFAULT_LINEAR_ENDPOINT = "https://api.linear.app/graphql";
+export const DEFAULT_PMS_ENDPOINT = "http://pms.qiyi.domain";
 export const DEFAULT_TRACKER_KIND = "linear";
+export const PMS_TRACKER_KIND = "pms";
+export const DEFAULT_PMS_CONSUMER_KEY = "qa-monitor";
+export const DEFAULT_PMS_PAGE_SIZE = 50;
+export const DEFAULT_PMS_NETWORK_TIMEOUT_MS = 30_000;
 export const DEFAULT_ACTIVE_STATES = ["Todo", "In Progress"] as const;
 export const DEFAULT_TERMINAL_STATES = [
   "Closed",

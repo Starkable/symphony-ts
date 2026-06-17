@@ -6,6 +6,14 @@ export interface WorkflowHooksConfig {
   timeoutMs: number;
 }
 
+export interface WorkflowTrackerOAuthConfig {
+  accessToken: string | null;
+  accessTokenSecret: string | null;
+  rsaPrivateKeyPath: string | null;
+  consumerKey: string;
+  validateOnDispatch: boolean;
+}
+
 export interface WorkflowTrackerConfig {
   kind: string | null;
   endpoint: string;
@@ -13,6 +21,8 @@ export interface WorkflowTrackerConfig {
   projectSlug: string | null;
   activeStates: string[];
   terminalStates: string[];
+  /** Present when `kind` is `pms`; null for Linear. */
+  oauth: WorkflowTrackerOAuthConfig | null;
 }
 
 export interface WorkflowPollingConfig {

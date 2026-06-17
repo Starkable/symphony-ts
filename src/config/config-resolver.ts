@@ -27,6 +27,8 @@ import {
   DEFAULT_OBSERVABILITY_ENABLED,
   DEFAULT_OBSERVABILITY_REFRESH_MS,
   DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
+  DEFAULT_PMS_CONSUMER_KEY,
+  DEFAULT_PMS_ENDPOINT,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_READ_TIMEOUT_MS,
   DEFAULT_STALL_TIMEOUT_MS,
@@ -34,6 +36,7 @@ import {
   DEFAULT_TRACKER_KIND,
   DEFAULT_TURN_TIMEOUT_MS,
   DEFAULT_WORKSPACE_ROOT,
+  PMS_TRACKER_KIND,
 } from "./defaults.js";
 import type {
   AgentHarnessKind,
@@ -43,9 +46,14 @@ import type {
   ResolvedWorkflowConfig,
   WorkflowCodexConfig,
   WorkflowCursorHarnessConfig,
+  WorkflowTrackerOAuthConfig,
 } from "./types.js";
 
 const LINEAR_CANONICAL_API_KEY_ENV = "LINEAR_API_KEY";
+const PMS_CANONICAL_ACCESS_TOKEN_ENV = "PMS_OAUTH_ACCESS_TOKEN";
+const PMS_CANONICAL_ACCESS_TOKEN_SECRET_ENV = "PMS_OAUTH_ACCESS_TOKEN_SECRET";
+const PMS_CANONICAL_RSA_KEY_PATH_ENV = "PMS_JIRA_KEY_PATH";
+const PMS_CANONICAL_SERVER_ENV = "PMS_JIRA_SERVER";
 
 export function resolveWorkflowConfig(
   workflow: WorkflowDefinition & { workflowPath: string },
@@ -65,13 +73,20 @@ export function resolveWorkflowConfig(
   const observability = asRecord(config.observability);
   const resolvedCodex = resolveCodexHarnessConfig(codex, harnessesCodex);
   const resolvedCursor = resolveCursorHarnessConfig(harnessesCursor);
+  const trackerKind = readString(tracker.kind) ?? DEFAULT_TRACKER_KIND;
+  const normalizedKind = trackerKind.trim().toLowerCase();
 
   return {
     workflowPath: workflow.workflowPath,
     promptTemplate: workflow.promptTemplate,
     tracker: {
-      kind: readString(tracker.kind) ?? DEFAULT_TRACKER_KIND,
-      endpoint: readString(tracker.endpoint) ?? DEFAULT_LINEAR_ENDPOINT,
+      kind: trackerKind,
+      endpoint:
+        readString(tracker.endpoint) ??
+        (normalizedKind === PMS_TRACKER_KIND
+          ? (environment[PMS_CANONICAL_SERVER_ENV]?.trim() ??
+            DEFAULT_PMS_ENDPOINT)
+          : DEFAULT_LINEAR_ENDPOINT),
       apiKey:
         resolveEnvReference(readString(tracker.api_key), environment) ??
         environment[LINEAR_CANONICAL_API_KEY_ENV] ??
@@ -85,6 +100,14 @@ export function resolveWorkflowConfig(
         tracker.terminal_states,
         DEFAULT_TERMINAL_STATES,
       ),
+      oauth:
+        normalizedKind === PMS_TRACKER_KIND
+          ? resolveTrackerOAuthConfig(
+              asRecord(tracker.oauth),
+              workflow.workflowPath,
+              environment,
+            )
+          : null,
     },
     polling: {
       intervalMs: readInteger(polling.interval_ms) ?? DEFAULT_POLL_INTERVAL_MS,
@@ -152,17 +175,10 @@ export function validateDispatchConfig(
     );
   }
 
-  if (trackerKind !== DEFAULT_TRACKER_KIND) {
+  if (trackerKind !== DEFAULT_TRACKER_KIND && trackerKind !== PMS_TRACKER_KIND) {
     return invalid(
       ERROR_CODES.unsupportedTrackerKind,
       `tracker.kind '${trackerKind}' is not supported.`,
-    );
-  }
-
-  if (!config.tracker.apiKey || config.tracker.apiKey.trim() === "") {
-    return invalid(
-      ERROR_CODES.trackerCredentialsMissing,
-      "tracker.api_key must be configured before dispatch.",
     );
   }
 
@@ -170,6 +186,18 @@ export function validateDispatchConfig(
     return invalid(
       ERROR_CODES.configInvalid,
       "tracker.project_slug must be configured before dispatch.",
+    );
+  }
+
+  if (trackerKind === PMS_TRACKER_KIND) {
+    const oauthError = validatePmsOAuthConfig(config);
+    if (oauthError !== null) {
+      return oauthError;
+    }
+  } else if (!config.tracker.apiKey || config.tracker.apiKey.trim() === "") {
+    return invalid(
+      ERROR_CODES.trackerCredentialsMissing,
+      "tracker.api_key must be configured before dispatch.",
     );
   }
 
@@ -309,6 +337,72 @@ function readCursorReusePolicy(value: unknown): CursorReusePolicy {
     return "fresh_each_run";
   }
   return DEFAULT_CURSOR_REUSE_POLICY;
+}
+
+function validatePmsOAuthConfig(
+  config: ResolvedWorkflowConfig,
+): DispatchValidationResult | null {
+  const oauth = config.tracker.oauth;
+  if (oauth === null) {
+    return invalid(
+      ERROR_CODES.trackerCredentialsMissing,
+      "tracker.oauth must be configured when tracker.kind is pms.",
+    );
+  }
+
+  if (!oauth.accessToken || oauth.accessToken.trim() === "") {
+    return invalid(
+      ERROR_CODES.trackerCredentialsMissing,
+      "tracker.oauth.access_token must be configured before dispatch.",
+    );
+  }
+
+  if (!oauth.accessTokenSecret || oauth.accessTokenSecret.trim() === "") {
+    return invalid(
+      ERROR_CODES.trackerCredentialsMissing,
+      "tracker.oauth.access_token_secret must be configured before dispatch.",
+    );
+  }
+
+  if (!oauth.rsaPrivateKeyPath || oauth.rsaPrivateKeyPath.trim() === "") {
+    return invalid(
+      ERROR_CODES.trackerCredentialsMissing,
+      "tracker.oauth.rsa_private_key_path must be configured before dispatch.",
+    );
+  }
+
+  return null;
+}
+
+function resolveTrackerOAuthConfig(
+  oauth: Record<string, unknown>,
+  workflowPath: string,
+  environment: NodeJS.ProcessEnv,
+): WorkflowTrackerOAuthConfig {
+  return {
+    accessToken:
+      resolveEnvReference(readString(oauth.access_token), environment) ??
+      environment[PMS_CANONICAL_ACCESS_TOKEN_ENV]?.trim() ??
+      null,
+    accessTokenSecret:
+      resolveEnvReference(readString(oauth.access_token_secret), environment) ??
+      environment[PMS_CANONICAL_ACCESS_TOKEN_SECRET_ENV]?.trim() ??
+      null,
+    rsaPrivateKeyPath:
+      resolvePathValue(
+        readString(oauth.rsa_private_key_path),
+        workflowPath,
+        environment,
+      ) ??
+      resolvePathValue(
+        environment[PMS_CANONICAL_RSA_KEY_PATH_ENV] ?? null,
+        workflowPath,
+        environment,
+      ),
+    consumerKey:
+      readString(oauth.consumer_key)?.trim() || DEFAULT_PMS_CONSUMER_KEY,
+    validateOnDispatch: readBoolean(oauth.validate_on_dispatch) ?? true,
+  };
 }
 
 function invalid(code: string, message: string): DispatchValidationResult {

@@ -242,6 +242,7 @@ Prompt body
             projectSlug: "ENG",
             activeStates: ["Todo"],
             terminalStates: ["Done"],
+            oauth: null,
           },
         }),
         tracker: createTracker(),
@@ -572,6 +573,7 @@ function createConfig(
       projectSlug: "ENG",
       activeStates: ["Todo"],
       terminalStates: ["Done", "Canceled"],
+      oauth: null,
     },
     polling: {
       intervalMs: 30_000,

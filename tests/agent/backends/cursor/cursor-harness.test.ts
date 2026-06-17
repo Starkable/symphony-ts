@@ -157,6 +157,7 @@ function buildHarnessConfig(
       projectSlug: "ENG",
       activeStates: ["In Progress"],
       terminalStates: ["Done"],
+      oauth: null,
     },
     polling: { intervalMs: 30_000 },
     workspace: { root: "/tmp/workspaces" },

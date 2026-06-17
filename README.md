@@ -1,43 +1,43 @@
 # Symphony-ts
 
-**This project is an unofficial TypeScript implementation of [OpenAI Symphony](https://github.com/openai/symphony).**
+**本项目是 [OpenAI Symphony](https://github.com/openai/symphony) 的非官方 TypeScript 实现。**
 
-Symphony-ts turns project work into isolated, autonomous implementation runs: it reads work from
-your tracker, creates a dedicated workspace for each issue, runs a coding agent inside that
-boundary, and gives operators a clean surface for runtime visibility, retries, and control.
+Symphony-ts 将项目工作转化为隔离、自主的实现运行：从需求平台读取工单，为每个 issue 创建独立 workspace，在边界内运行 coding agent，并为运维提供清晰的运行时可见性、重试与控制界面。
 
 > [!WARNING]
-> Symphony is intended for trusted environments.
+> Symphony 仅适用于可信环境。
 
-![Symphony demo showing Linear issue tracking alongside the Symphony observability dashboard](.github/media/demo.png)
+![Symphony 演示：Linear 工单跟踪与 Symphony 可观测性仪表盘](.github/media/demo.png)
 
-## Running Symphony
+## 运行 Symphony
 
-### Requirements
+### 环境要求
 
 - Node.js `>= 22`
-- a repository with a valid `WORKFLOW.md`
-- tracker credentials such as `LINEAR_API_KEY`
-- a coding agent runtime that supports app-server mode, such as `codex app-server`
+- 目标仓库中存在有效的 `WORKFLOW.md`
+- 需求平台凭据：
+  - **Linear**：环境变量 `LINEAR_API_KEY`
+  - **PMS（爱奇艺内部 Jira）**：`tracker.kind: pms`，OAuth 凭据配置见 [docs/pms-tracker.md](docs/pms-tracker.md)
+- 支持 app-server 模式的 coding agent 运行时，例如 `codex app-server` 或 Cursor CLI
 
-### Install
+### 安装
 
 ```bash
 npm install -g symphony-ts
 ```
 
-Verify the CLI is available:
+验证 CLI 是否可用：
 
 ```bash
 symphony --help
 ```
 
-### Quickstart
+### 快速开始
 
-1. Go to the repository you want Symphony to operate on.
-2. Create `WORKFLOW.md` in that repository.
-3. Export `LINEAR_API_KEY`.
-4. Start Symphony from that repository root.
+1. 进入希望 Symphony 操作的仓库目录。
+2. 在该仓库中创建 `WORKFLOW.md`。
+3. 配置需求平台凭据（Linear 示例：导出 `LINEAR_API_KEY`）。
+4. 在仓库根目录启动 Symphony。
 
 ```bash
 cd /path/to/your-repo
@@ -45,37 +45,38 @@ export LINEAR_API_KEY=your-linear-token
 symphony ./WORKFLOW.md --acknowledge-high-trust-preview --port 4321
 ```
 
-If you do not pass a path, Symphony defaults to `./WORKFLOW.md`:
+若不传入路径，Symphony 默认读取 `./WORKFLOW.md`：
 
 ```bash
 symphony --acknowledge-high-trust-preview --port 4321
 ```
 
-You can also run without global install:
+也可不全局安装，直接通过 npx 运行：
 
 ```bash
 npx symphony-ts ./WORKFLOW.md --acknowledge-high-trust-preview --port 4321
 ```
 
-Symphony does not generate `WORKFLOW.md` for you. It expects a repository-owned workflow file and,
-by default, reads `./WORKFLOW.md` from the current working directory.
+Symphony **不会**自动生成 `WORKFLOW.md`。它期望仓库内有一份自有的 workflow 文件，并默认从当前工作目录读取 `./WORKFLOW.md`。
 
 <details>
-<summary>Agent setup prompt</summary>
+<summary>Agent 安装引导提示词</summary>
+
+将以下内容发给 Agent，用于在本仓库中安装并启动 Symphony（命令与环境变量保持原文）：
 
 ```text
-Set up and start Symphony in this repository.
+在本仓库中安装并启动 Symphony。
 
-Requirements:
-- create or update WORKFLOW.md for Linear
-- use LINEAR_API_KEY from the environment or tell me exactly which variable is missing
-- install symphony-ts and start Symphony with the required --acknowledge-high-trust-preview flag
-- if startup fails, stop and report the exact failing step and command
+要求：
+- 创建或更新 WORKFLOW.md（Linear 或 Pms）
+- 从环境变量读取 LINEAR_API_KEY / PMS OAuth 凭据；若缺失，明确告知缺少哪个变量
+- 安装 symphony-ts，并使用必需的 --acknowledge-high-trust-preview 标志启动 Symphony
+- 若启动失败，停止并报告失败的具体步骤与命令
 ```
 
 </details>
 
-### `WORKFLOW.md` template
+### `WORKFLOW.md` 模板（Linear）
 
 ```md
 ---
@@ -95,52 +96,46 @@ You are working on Linear issue {{ issue.identifier }}.
 Implement the task, validate the result, and stop at the required handoff state.
 ```
 
-This is the only example `WORKFLOW.md` you need to get started. Copy it into your repository root
-as `WORKFLOW.md`, then change these fields before starting Symphony:
+将上述内容复制到仓库根目录的 `WORKFLOW.md`，启动前至少修改：
 
 - `tracker.project_slug`
 - `workspace.root`
 - `codex.command`
 
-If you want the dashboard, keep `server.port` in the workflow or pass `--port` on the CLI.
-The web dashboard now opens with a server-rendered snapshot and continues updating live in the
-browser over server-sent events.
+**使用 PMS：** 将 `tracker.kind` 设为 `pms`，并配置 `oauth.*` 与 `project_slug`（Jira projectKey）。完整说明见 [docs/pms-tracker.md](docs/pms-tracker.md)，可运行样例见 [examples/workflow-pms/WORKFLOW.md](examples/workflow-pms/WORKFLOW.md)。
 
-If your agent workflow needs access to environment variables from the launching shell, configure
-Codex to inherit them in `codex.command`, for example:
+若需要 Web 仪表盘，在 workflow 中保留 `server.port`，或在 CLI 上传 `--port`。仪表盘会先渲染服务端快照，再通过 SSE 在浏览器中持续更新。
+
+若 agent workflow 需要访问启动 shell 中的环境变量，可在 `codex.command` 中配置 Codex 继承环境，例如：
 
 ```yaml
 codex:
   command: codex --config shell_environment_policy.inherit=all app-server
 ```
 
-If your agent must push branches, open PRs, or call external APIs during a turn, also configure a
-turn sandbox policy that explicitly allows network access instead of relying on a minimal
-`workspaceWrite` sandbox object.
+若 agent 需要在 turn 内 push 分支、开 PR 或调用外部 API，还需配置允许网络访问的 turn sandbox 策略，而非仅依赖 minimal 的 `workspaceWrite` sandbox。
 
-If a specific external CLI still does not see the credentials it needs in your environment, provide
-that tool's credential via environment variables before launching Symphony.
+若某外部 CLI 仍无法读取所需凭据，请在启动 Symphony 前通过环境变量注入该工具的凭据。
 
-For a complete reference covering every supported field with defaults and inline documentation, see
-[docs/WORKFLOW.template.md](docs/WORKFLOW.template.md).
+所有支持字段、默认值与行内说明的完整参考见 [docs/WORKFLOW.template.md](docs/WORKFLOW.template.md)。
 
-### What You Get
+### 运行后你会得到什么
 
-Once Symphony is running, it will:
+Symphony 启动后将：
 
-- poll your tracker for eligible work
-- create a dedicated workspace per issue
-- run your coding agent inside that workspace
-- expose a local dashboard and JSON API when `--port` or `server.port` is set
-- keep retry, reconciliation, and cleanup state visible to operators
+- 从需求平台 poll 符合条件的工单
+- 为每个 issue 创建独立 workspace
+- 在该 workspace 内运行 coding agent
+- 在设置 `--port` 或 `server.port` 时暴露本地仪表盘与 JSON API
+- 向运维人员展示重试、reconcile 与 cleanup 状态
 
-### Develop
+### 开发
 
-To develop Symphony itself you will need:
+开发 Symphony 本身需要：
 
 - Node.js `>= 22`
 - pnpm `>= 10`
-- Codex CLI with `codex app-server` support
+- 支持 `codex app-server` 的 Codex CLI
 
 ```bash
 pnpm install
@@ -148,7 +143,7 @@ pnpm build
 node dist/src/cli/main.js --help   # verify the build
 ```
 
-Run checks:
+运行检查：
 
 ```bash
 pnpm test           # run all tests once
@@ -158,9 +153,9 @@ pnpm lint           # Biome lint check
 pnpm format         # Biome auto-format
 ```
 
-### Run From Source
+### 从源码运行
 
-If you are developing Symphony itself rather than using the published CLI:
+若开发 Symphony 本身而非使用已发布的 CLI：
 
 ```bash
 pnpm install
@@ -168,69 +163,49 @@ pnpm build
 node dist/src/cli/main.js --acknowledge-high-trust-preview
 ```
 
-See [docs/DEV_GUIDE.md](docs/DEV_GUIDE.md) for a full walkthrough including Linear setup, `WORKFLOW.md` configuration, and troubleshooting.
+Linear 配置、`WORKFLOW.md` 与排障的完整 walkthrough 见 [docs/DEV_GUIDE.md](docs/DEV_GUIDE.md)。
 
-## Roadmap
+## 路线图
 
-| Item | Status |
+| 项 | 状态 |
 | --- | --- |
-| Implement Symphony and Linear integration | ✅ Complete |
-| Cursor CLI agent harness | 🟡 In progress ([fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)) |
-| Cursor Policy workflow (clarify → verify → PR) | ✅ Documented — see [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md) |
-| Support more platforms such as GitHub Projects | 🟡 Planned |
-| Support a local board GUI | 🟡 Planned |
-| Support more coding agents such as Claude Code scheduling | 🟡 Planned |
+| Symphony 与 Linear 集成 | ✅ 已完成 |
+| PMS 只读 tracker（`tracker.kind: pms`） | ✅ 已完成 — 见 [docs/pms-tracker.md](docs/pms-tracker.md) |
+| Cursor CLI agent harness | 🟡 进行中（[fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)） |
+| Cursor Policy 工作流（clarify → verify → PR） | ✅ 已文档化 — 见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md) |
+| 支持更多平台（如 GitHub Projects） | 🟡 计划中 |
+| 本地看板 GUI | 🟡 计划中 |
+| 支持更多 coding agent（如 Claude Code 调度） | 🟡 计划中 |
 
-Agent 无人值守 Policy（Workpad、Subagent 验证、skills）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。暂缓项（需求平台、orchestrator 门控等）见该文档 TODO 节。
+Agent 无人值守 Policy（Workpad、Subagent 验证、skills）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。PMS **写回**（评论、状态同步）与 orchestrator 门控等暂缓项见该文档 TODO 节。
 
-If there is a platform you want Symphony to support, open an issue and let us know.
+若希望 Symphony 支持其他需求平台，欢迎提 issue 告知。
 
-## What Symphony Does
+## Symphony 做什么
 
-Symphony is a long-running service that:
+Symphony 是一个长期运行的服务，它会：
 
-- monitors your tracker for eligible work
-- creates deterministic, per-issue workspaces
-- renders repository-owned workflow prompts from `WORKFLOW.md`
-- runs coding agents in isolated execution contexts
-- handles retries, reconciliation, and cleanup
-- exposes structured logs and an operator-facing status surface
+- 监控需求平台中的符合条件工单
+- 为每个 issue 创建确定性的独立 workspace
+- 从 `WORKFLOW.md` 渲染仓库自有的 workflow prompt
+- 在隔离的执行上下文中运行 coding agent
+- 处理重试、reconcile 与 cleanup
+- 暴露结构化日志与面向运维的状态界面
 
-In a typical setup, Symphony watches a Linear board, dispatches agent runs for ready tickets, and
-lets the agents produce proof of work such as CI status, review feedback, and pull requests. Human
-operators stay focused on the work itself instead of supervising every agent turn.
+典型场景中，Symphony 监听 Linear 或 PMS 上的就绪工单，dispatch agent 运行，由 agent 产出 CI 状态、Review 反馈、Pull Request 等工作成果；运维人员聚焦业务本身，而非逐 turn 监督 agent。
 
-## Why Teams Use It
+## 为什么团队使用它
 
-- to turn tracker tickets into autonomous implementation runs
-- to isolate agent work by issue instead of sharing one mutable directory
-- to keep workflow policy inside the repository
-- to operate multiple concurrent agents without losing observability
-- to introduce a higher-level operating model for AI-assisted engineering
+- 将 tracker 工单转化为自主实现运行
+- 按 issue 隔离 agent 工作，避免共享同一可变目录
+- 将 workflow 策略保留在仓库内
+- 并发运行多个 agent 而不丢失可观测性
+- 引入 AI 辅助工程的高层次运行模型
 
-## Contributing
+## 贡献
 
-If you are extending this TypeScript implementation, keep changes aligned with the upstream product
-model in [`SPEC.upstream.md`](SPEC.upstream.md) and follow the repository workflow documented in
-[`AGENTS.md`](AGENTS.md).
+扩展本 TypeScript 实现时，请与 [`SPEC.upstream.md`](SPEC.upstream.md) 中的 upstream 产品模型保持一致，并遵循 [`AGENTS.md`](AGENTS.md) 中的仓库工作流。
 
-## License
+## 许可证
 
-This repository is licensed under [`Apache-2.0`](LICENSE). See [`NOTICE`](NOTICE) for attribution
-information related to the upstream OpenAI Symphony project and this unofficial TypeScript
-implementation.
-
----
-understand-community:
-    serviceId: symphony-ts
-    displayName: loopWork
-    domains:
-        - order.internal.example.com
-    aliases:
-        - symphony
-    contextPaths:
-        - /
----
-
-# Order Service
-...
+本仓库采用 [`Apache-2.0`](LICENSE) 许可证。关于 upstream OpenAI Symphony 与本非官方 TypeScript 实现的归属说明，见 [`NOTICE`](NOTICE)。

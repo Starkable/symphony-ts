@@ -1,9 +1,9 @@
 ---
 # ============================================================
-# tracker — Issue tracker connection (currently only "linear")
+# tracker — Issue tracker connection ("linear" or "pms")
 # ============================================================
 tracker:
-  # Tracker backend. Only "linear" is supported.
+  # Tracker backend. Supported: linear, pms
   kind: linear
 
   # GraphQL endpoint for the Linear API.
@@ -27,6 +27,23 @@ tracker:
   # Reaching one of these triggers workspace cleanup.
   # Default: [Closed, Cancelled, Canceled, Duplicate, Done]
   terminal_states: [Closed, Cancelled, Canceled, Duplicate, Done]
+
+# --- PMS (Jira) read-only tracker example ---
+# Uncomment and replace the linear tracker block above when using PMS.
+# Full details: docs/pms-tracker.md
+#
+# tracker:
+#   kind: pms
+#   endpoint: http://pms.qiyi.domain
+#   project_slug: BASELINEREQ
+#   active_states: [待开发]
+#   terminal_states: [已关闭, 已取消]
+#   oauth:
+#     access_token: $PMS_OAUTH_ACCESS_TOKEN
+#     access_token_secret: $PMS_OAUTH_ACCESS_TOKEN_SECRET
+#     rsa_private_key_path: $PMS_JIRA_KEY_PATH
+#     consumer_key: qa-monitor
+#     validate_on_dispatch: true
 
 # ============================================================
 # polling — How often Symphony checks for new/changed issues

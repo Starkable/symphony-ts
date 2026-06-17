@@ -28,7 +28,8 @@ import {
   type RefreshResponse,
   startDashboardServer,
 } from "../observability/dashboard-server.js";
-import { LinearTrackerClient } from "../tracker/linear-client.js";
+import { validatePmsTrackerAuthIfConfigured } from "../tracker/pms/pms-client.js";
+import { createIssueTracker } from "../tracker/tracker-factory.js";
 import type { IssueTracker } from "../tracker/tracker.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
@@ -490,7 +491,10 @@ export async function startRuntimeService(
   // 当前配置：当前配置
   let currentConfig = options.config;
   // 创建linear任务类
-  let tracker = options.tracker ?? createLinearTrackerFromConfig(currentConfig);
+  let tracker = options.tracker ?? createIssueTracker(currentConfig);
+  if (options.tracker === undefined) {
+    await validatePmsTrackerAuthIfConfigured(currentConfig, tracker);
+  }
   // 创建工作空间管理器：创建工作空间管理器
   let workspaceManager =
     options.workspaceManager ??
@@ -596,7 +600,8 @@ export async function startRuntimeService(
 
             // 如果使用管理跟踪器，则创建线性跟踪器
             if (usesManagedTracker) {
-              tracker = createLinearTrackerFromConfig(nextConfig);
+              tracker = createIssueTracker(nextConfig);
+              await validatePmsTrackerAuthIfConfigured(nextConfig, tracker);
             }
 
             // 如果使用管理工作空间管理器，则创建工作空间管理器
@@ -817,18 +822,6 @@ async function cleanupTerminalIssueWorkspaces(input: {
       },
     );
   }
-}
-
-// 创建linear任务类
-function createLinearTrackerFromConfig(
-  config: ResolvedWorkflowConfig,
-): LinearTrackerClient {
-  return new LinearTrackerClient({
-    endpoint: config.tracker.endpoint,
-    apiKey: config.tracker.apiKey,
-    projectSlug: config.tracker.projectSlug,
-    activeStates: config.tracker.activeStates,
-  });
 }
 
 // 创建工作区间管理

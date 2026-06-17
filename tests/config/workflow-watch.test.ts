@@ -122,8 +122,8 @@ Prompt v2
     expect(watcher.currentSnapshot.dispatchValidation).toEqual({
       ok: false,
       error: {
-        code: ERROR_CODES.trackerCredentialsMissing,
-        message: "tracker.api_key must be configured before dispatch.",
+        code: ERROR_CODES.configInvalid,
+        message: "tracker.project_slug must be configured before dispatch.",
       },
     });
     expect(onReload).toHaveBeenCalledTimes(1);
