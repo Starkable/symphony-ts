@@ -40,7 +40,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "pms:smoke": "node dist/src/cli/pms-smoke.js",
+    "pms:verify-jql": "node dist/src/cli/pms-verify-jql.js"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

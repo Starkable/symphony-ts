@@ -24,7 +24,7 @@ import {
   type PmsOAuthCredentials,
 } from "./pms-oauth.js";
 
-const ISSUE_SEARCH_FIELDS = [
+const ISSUE_SEARCH_FIELD_LIST = [
   "summary",
   "description",
   "status",
@@ -32,7 +32,9 @@ const ISSUE_SEARCH_FIELDS = [
   "priority",
   "created",
   "updated",
-].join(",");
+];
+
+const ISSUE_SEARCH_FIELDS = ISSUE_SEARCH_FIELD_LIST.join(",");
 
 const STATE_REFRESH_FIELDS = "id,key,status";
 
@@ -43,10 +45,46 @@ interface JiraSearchResponse {
   maxResults?: unknown;
 }
 
+function toPmsSearchError(
+  status: number,
+  jql: string,
+  startAt: number,
+  errorBody: string,
+): TrackerError {
+  let message = `PMS search request failed with HTTP ${status}.`;
+  try {
+    const parsed = JSON.parse(errorBody) as { errorMessages?: unknown };
+    if (Array.isArray(parsed.errorMessages) && parsed.errorMessages.length > 0) {
+      const details = parsed.errorMessages
+        .filter((entry): entry is string => typeof entry === "string")
+        .join("; ");
+      if (details !== "") {
+        message += ` ${details}`;
+      }
+    }
+  } catch {
+    // Keep generic message when body is not JSON.
+  }
+
+  return new TrackerError(ERROR_CODES.trackerHttpError, message, {
+    status,
+    details: { jql, startAt, body: errorBody.slice(0, 800) },
+  });
+}
+
+function resolveSearchFieldList(fields: string): string[] {
+  return fields
+    .split(",")
+    .map((field) => field.trim())
+    .filter((field) => field !== "");
+}
+
 export interface PmsTrackerClientOptions {
   serverUrl: string;
   projectKey: string | null;
   activeStates: string[];
+  issueTypes?: string[];
+  excludeDraftStatus?: boolean;
   oauth: PmsOAuthCredentials;
   pageSize?: number;
   networkTimeoutMs?: number;
@@ -58,6 +96,8 @@ export class PmsTrackerClient implements IssueTracker {
   private readonly browseBaseUrl: string;
   private readonly projectKey: string | null;
   private readonly activeStates: string[];
+  private readonly issueTypes: string[];
+  private readonly excludeDraftStatus: boolean;
   private readonly oauth: PmsOAuthCredentials;
   private readonly pageSize: number;
   private readonly networkTimeoutMs: number;
@@ -68,6 +108,8 @@ export class PmsTrackerClient implements IssueTracker {
     this.browseBaseUrl = resolvePmsBrowseBaseUrl(options.serverUrl);
     this.projectKey = options.projectKey;
     this.activeStates = [...options.activeStates];
+    this.issueTypes = [...(options.issueTypes ?? [])];
+    this.excludeDraftStatus = options.excludeDraftStatus ?? false;
     this.oauth = options.oauth;
     this.pageSize = options.pageSize ?? DEFAULT_PMS_PAGE_SIZE;
     this.networkTimeoutMs =
@@ -99,6 +141,8 @@ export class PmsTrackerClient implements IssueTracker {
       serverUrl: config.tracker.endpoint,
       projectKey: config.tracker.projectSlug,
       activeStates: config.tracker.activeStates,
+      issueTypes: config.tracker.issueTypes,
+      excludeDraftStatus: config.tracker.excludeDraftStatus,
       oauth: {
         consumerKey: oauthConfig.consumerKey,
         accessToken,
@@ -133,6 +177,7 @@ export class PmsTrackerClient implements IssueTracker {
     const jql = buildCandidateIssuesJql(
       this.requireProjectKey(),
       this.activeStates,
+      this.projectJqlOptions(),
     );
     return this.searchIssues(jql, ISSUE_SEARCH_FIELDS);
   }
@@ -142,8 +187,19 @@ export class PmsTrackerClient implements IssueTracker {
       return [];
     }
 
-    const jql = buildIssuesByStatesJql(this.requireProjectKey(), stateNames);
+    const jql = buildIssuesByStatesJql(
+      this.requireProjectKey(),
+      stateNames,
+      this.projectJqlOptions(),
+    );
     return this.searchIssues(jql, ISSUE_SEARCH_FIELDS);
+  }
+
+  private projectJqlOptions() {
+    return {
+      issueTypes: this.issueTypes,
+      excludeDraftStatus: this.excludeDraftStatus,
+    };
   }
 
   async fetchIssueStatesByIds(issueIds: string[]): Promise<IssueStateSnapshot[]> {
@@ -164,6 +220,7 @@ export class PmsTrackerClient implements IssueTracker {
   private async searchIssueNodes(jql: string, fields: string): Promise<unknown[]> {
     const nodes: unknown[] = [];
     let startAt = 0;
+    const fieldList = resolveSearchFieldList(fields);
 
     while (true) {
       const url = `${this.restBaseUrl}/search`;
@@ -171,20 +228,17 @@ export class PmsTrackerClient implements IssueTracker {
         jql,
         startAt,
         maxResults: this.pageSize,
-        fields: fields.split(","),
+        fields: fieldList,
       });
 
+      const responseText = await response.text();
       if (!response.ok) {
-        throw new TrackerError(
-          ERROR_CODES.trackerHttpError,
-          `PMS search request failed with HTTP ${response.status}.`,
-          { status: response.status, details: { jql, startAt } },
-        );
+        throw toPmsSearchError(response.status, jql, startAt, responseText);
       }
 
       let body: JiraSearchResponse;
       try {
-        body = (await response.json()) as JiraSearchResponse;
+        body = JSON.parse(responseText) as JiraSearchResponse;
       } catch (error) {
         throw new TrackerError(
           ERROR_CODES.trackerResponseMalformed,

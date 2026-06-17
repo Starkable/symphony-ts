@@ -243,6 +243,8 @@ function createConfig(
       projectSlug: "ENG",
       activeStates: ["Todo"],
       terminalStates: ["Done"],
+      issueTypes: [],
+      excludeDraftStatus: false,
       oauth: null,
     },
     polling: {

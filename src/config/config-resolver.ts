@@ -100,6 +100,8 @@ export function resolveWorkflowConfig(
         tracker.terminal_states,
         DEFAULT_TERMINAL_STATES,
       ),
+      issueTypes: readStringList(tracker.issue_types, []),
+      excludeDraftStatus: readBoolean(tracker.exclude_draft_status) ?? false,
       oauth:
         normalizedKind === PMS_TRACKER_KIND
           ? resolveTrackerOAuthConfig(

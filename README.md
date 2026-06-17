@@ -17,7 +17,7 @@ Symphony-ts 将项目工作转化为隔离、自主的实现运行：从需求�
 - 目标仓库中存在有效的 `WORKFLOW.md`
 - 需求平台凭据：
   - **Linear**：环境变量 `LINEAR_API_KEY`
-  - **PMS（爱奇艺内部 Jira）**：`tracker.kind: pms`，OAuth 凭据配置见 [docs/pms-tracker.md](docs/pms-tracker.md)
+  - **PMS（爱奇艺内部 Jira）**：`tracker.kind: pms` — 配置见 [docs/pms-tracker.md](docs/pms-tracker.md)，字段对照见 [docs/pms-field-mapping.md](docs/pms-field-mapping.md)
 - 支持 app-server 模式的 coding agent 运行时，例如 `codex app-server` 或 Cursor CLI
 
 ### 安装
@@ -102,7 +102,7 @@ Implement the task, validate the result, and stop at the required handoff state.
 - `workspace.root`
 - `codex.command`
 
-**使用 PMS：** 将 `tracker.kind` 设为 `pms`，并配置 `oauth.*` 与 `project_slug`（Jira projectKey）。完整说明见 [docs/pms-tracker.md](docs/pms-tracker.md)，可运行样例见 [examples/workflow-pms/WORKFLOW.md](examples/workflow-pms/WORKFLOW.md)。
+**使用 PMS：** 将 `tracker.kind` 设为 `pms`，并配置 `oauth.*` 与 `project_slug`（Jira projectKey）。配置与联调见 [docs/pms-tracker.md](docs/pms-tracker.md)，**字段含义对照**见 [docs/pms-field-mapping.md](docs/pms-field-mapping.md)，样例见 [examples/workflow-pms/WORKFLOW.md](examples/workflow-pms/WORKFLOW.md)。
 
 若需要 Web 仪表盘，在 workflow 中保留 `server.port`，或在 CLI 上传 `--port`。仪表盘会先渲染服务端快照，再通过 SSE 在浏览器中持续更新。
 
@@ -170,7 +170,7 @@ Linear 配置、`WORKFLOW.md` 与排障的完整 walkthrough 见 [docs/DEV_GUIDE
 | 项 | 状态 |
 | --- | --- |
 | Symphony 与 Linear 集成 | ✅ 已完成 |
-| PMS 只读 tracker（`tracker.kind: pms`） | ✅ 已完成 — 见 [docs/pms-tracker.md](docs/pms-tracker.md) |
+| PMS 只读 tracker（`tracker.kind: pms`） | ✅ 已完成 — [配置](docs/pms-tracker.md) · [字段对照](docs/pms-field-mapping.md) |
 | Cursor CLI agent harness | 🟡 进行中（[fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)） |
 | Cursor Policy 工作流（clarify → verify → PR） | ✅ 已文档化 — 见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md) |
 | 支持更多平台（如 GitHub Projects） | 🟡 计划中 |

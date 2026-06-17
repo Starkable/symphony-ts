@@ -481,6 +481,8 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       projectSlug: "example",
       activeStates: ["In Progress"],
       terminalStates: ["Done", "Canceled"],
+      issueTypes: [],
+      excludeDraftStatus: false,
       oauth: null,
     },
     polling: {

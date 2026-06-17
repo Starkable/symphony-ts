@@ -21,6 +21,10 @@ export interface WorkflowTrackerConfig {
   projectSlug: string | null;
   activeStates: string[];
   terminalStates: string[];
+  /** Optional Jira issuetype names, e.g. 产品需求 (aligned with pms-opt-skill). */
+  issueTypes: string[];
+  /** When true, append status not in ("草稿", "审核中") to candidate JQL. */
+  excludeDraftStatus: boolean;
   /** Present when `kind` is `pms`; null for Linear. */
   oauth: WorkflowTrackerOAuthConfig | null;
 }

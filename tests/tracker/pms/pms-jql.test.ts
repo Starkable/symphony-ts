@@ -13,9 +13,31 @@ describe("pms-jql", () => {
     );
   });
 
+  it("builds candidate issue JQL with issuetype and draft exclusion", () => {
+    expect(
+      buildCandidateIssuesJql("CS", ["Open", "In Progress"], {
+        issueTypes: ["产品需求"],
+        excludeDraftStatus: true,
+      }),
+    ).toBe(
+      'project = "CS" AND issuetype in ("产品需求") AND status not in ("草稿", "审核中") AND status in ("Open", "In Progress") ORDER BY created ASC',
+    );
+  });
+
+  it("builds open candidate JQL when active states are empty", () => {
+    expect(
+      buildCandidateIssuesJql("CS", [], {
+        issueTypes: ["产品需求"],
+        excludeDraftStatus: true,
+      }),
+    ).toBe(
+      'project = "CS" AND issuetype in ("产品需求") AND status not in ("草稿", "审核中") AND statusCategory != Done ORDER BY created ASC',
+    );
+  });
+
   it("builds issues-by-states JQL", () => {
-    expect(buildIssuesByStatesJql("BASELINEREQ", ["已关闭"])).toBe(
-      'project = "BASELINEREQ" AND status in ("已关闭") ORDER BY created ASC',
+    expect(buildIssuesByStatesJql("CS", ["Done", "Closed"])).toBe(
+      'project = "CS" AND status in ("Done", "Closed") ORDER BY created ASC',
     );
   });
 

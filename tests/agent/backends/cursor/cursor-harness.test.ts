@@ -157,6 +157,8 @@ function buildHarnessConfig(
       projectSlug: "ENG",
       activeStates: ["In Progress"],
       terminalStates: ["Done"],
+      issueTypes: [],
+      excludeDraftStatus: false,
       oauth: null,
     },
     polling: { intervalMs: 30_000 },

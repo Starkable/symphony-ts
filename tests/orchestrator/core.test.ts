@@ -561,6 +561,8 @@ function createConfig(overrides?: {
       projectSlug: "project",
       activeStates: ["Todo", "In Progress", "In Review"],
       terminalStates: ["Done", "Canceled"],
+      issueTypes: [],
+      excludeDraftStatus: false,
       oauth: null,
     },
     polling: {

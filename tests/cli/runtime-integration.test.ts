@@ -242,6 +242,8 @@ Prompt body
             projectSlug: "ENG",
             activeStates: ["Todo"],
             terminalStates: ["Done"],
+            issueTypes: [],
+            excludeDraftStatus: false,
             oauth: null,
           },
         }),
@@ -573,6 +575,8 @@ function createConfig(
       projectSlug: "ENG",
       activeStates: ["Todo"],
       terminalStates: ["Done", "Canceled"],
+      issueTypes: [],
+      excludeDraftStatus: false,
       oauth: null,
     },
     polling: {

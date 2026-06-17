@@ -30,14 +30,17 @@ tracker:
 
 # --- PMS (Jira) read-only tracker example ---
 # Uncomment and replace the linear tracker block above when using PMS.
-# Full details: docs/pms-tracker.md
+# Setup & smoke tests: docs/pms-tracker.md
+# Field mapping (WORKFLOW / Jira / Issue): docs/pms-field-mapping.md
 #
 # tracker:
 #   kind: pms
 #   endpoint: http://pms.qiyi.domain
-#   project_slug: BASELINEREQ
-#   active_states: [待开发]
-#   terminal_states: [已关闭, 已取消]
+#   project_slug: CS
+#   active_states: [Open, "In Progress"]
+#   terminal_states: [Done, Closed]
+#   issue_types: [产品需求]
+#   exclude_draft_status: true
 #   oauth:
 #     access_token: $PMS_OAUTH_ACCESS_TOKEN
 #     access_token_secret: $PMS_OAUTH_ACCESS_TOKEN_SECRET
