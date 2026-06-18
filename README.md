@@ -172,12 +172,12 @@ Linear 配置、`WORKFLOW.md` 与排障的完整 walkthrough 见 [docs/DEV_GUIDE
 | Symphony 与 Linear 集成 | ✅ 已完成 |
 | PMS 只读 tracker（`tracker.kind: pms`） | ✅ 已完成 — [配置](docs/pms-tracker.md) · [字段对照](docs/pms-field-mapping.md) |
 | Cursor CLI agent harness | 🟡 进行中（[fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)） |
-| Cursor Policy 工作流（clarify → verify → PR） | ✅ 已文档化 — 见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md) |
+| Cursor Policy 工作流 | ✅ V1 OpenSpec 默认 — [symphony-agent-workflow.md](docs/symphony-agent-workflow.md)（V2 Subagent/Git 见同文档） |
 | 支持更多平台（如 GitHub Projects） | 🟡 计划中 |
 | 本地看板 GUI | 🟡 计划中 |
 | 支持更多 coding agent（如 Claude Code 调度） | 🟡 计划中 |
 
-Agent 无人值守 Policy（Workpad、Subagent 验证、skills）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。PMS **写回**（评论、状态同步）与 orchestrator 门控等暂缓项见该文档 TODO 节。
+Agent 无人值守 Policy（V1：Workpad + OpenSpec 默认；V2：Subagent、Git）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。PMS 写回与 orchestrator 门控等见该文档 TODO 节。
 
 若希望 Symphony 支持其他需求平台，欢迎提 issue 告知。
 

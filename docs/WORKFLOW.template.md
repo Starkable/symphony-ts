@@ -291,35 +291,86 @@ When finished:
 
 ---
 
-# Cursor Policy 工作流（可选 prompt 段）
+# Cursor Policy V1（OpenSpec 默认，推荐 prompt 段）
 
-当 `agent.harness: cursor` 且需无人值守 Policy（澄清 → Plan → Subagent 验证 → PR）时，可将下方块替换或追加到 prompt body。完整说明见 [symphony-agent-workflow.md](./symphony-agent-workflow.md)；样例见 [examples/workflow-cursor-policy/WORKFLOW.md](../examples/workflow-cursor-policy/WORKFLOW.md)。
+当 `agent.harness: cursor` 且需 **V1 全自动 Policy**（OpenSpec 默认实现、无 Git/Subagent）时，使用下方块或直接使用样例：
+
+- Linear：[examples/workflow-cursor-policy/WORKFLOW.md](../examples/workflow-cursor-policy/WORKFLOW.md)
+- PMS：[examples/workflow-pms-openspec/WORKFLOW.md](../examples/workflow-pms-openspec/WORKFLOW.md)
+
+完整说明：[symphony-agent-workflow.md](./symphony-agent-workflow.md)（V1 默认 + V2 增强分节）。
+
+### 宿主机准备（openspec CLI，人工一次）
+
+在部署 Symphony 的机器上安装并验证 `openspec`（**不要**在 `after_create` 里 `npm install -g`）：
+
+```bash
+openspec --version
+```
+
+### hooks.after_create：OpenSpec 初始化（每个 workspace）
+
+clone 与 `pnpm install` 之后执行。完整片段见 [snippets/openspec-workspace-bootstrap.sh](./snippets/openspec-workspace-bootstrap.sh)。
+
+```yaml
+hooks:
+  after_create: |
+    git clone --depth 1 'https://github.com/your-org/your-repo.git' .
+    pnpm install
+    openspec --version
+    if [ ! -f openspec/config.yaml ]; then
+      openspec init --tools none
+    fi
+    test -f openspec/config.yaml
+```
+
+可选：设置 `SYMPHONY_POLICY_ROOT` 指向 symphony-ts 根目录，在 bootstrap 脚本中复制 skills。
+
+若宿主机未装 CLI 或 init 失败 → hook 退出非 0；agent 应记 `Phase=failed`。
+
+### openspec tasks.md Validation 约定
+
+每个 `openspec/changes/<ChangeRef>/tasks.md` 末尾应包含：
 
 ```markdown
-## 首要动作
+## Validation
 
-1. 读/初始化 `.symphony/workpad.md`
-2. 按 Workpad Phase 执行本 turn 唯一允许动作
-3. 更新 Gate Log
-
-## C0
-
-Clarification 未完成 → 禁止改 src/tests、禁止 execute。
-不可推断 → `[CLARIFY]` + Phase=blocked + 正常结束 turn。
-
-## Phase 要点
-
-- clarify / plan / proposal_review：不写产品代码
-- proposal_review：Task readonly + proposal-review-subagent → REVIEW_REPORT
-- execute：commit skill
-- verify：Task readonly + qa-verify-subagent → VERIFICATION_REPORT（主 agent 不得自证）
-- submit：push skill；V1 pass 后方可 push
-
-## 验证失败
-
-VERIFICATION_REPORT: FAIL → Phase=execute（默认不回 clarify）。
-
-## Skills
-
-.agents/skills/{commit,push,proposal-review-subagent,qa-verify-subagent}/SKILL.md
+- [ ] `pnpm test`
+- [ ] `pnpm lint`
 ```
+
+verify Phase 以该段为命令权威来源。
+
+### V1 prompt 摘要（可嵌入 WORKFLOW body）
+
+```markdown
+Mode: v1-openspec
+ChangeRef = kebab-case({{ issue.identifier }})；仅 openspec/changes/<ChangeRef>/；禁止 AskUserQuestion 选 change。
+
+Phase（禁止跳步）：clarify→plan→proposal_review→execute→verify→archive→done
+- clarify: openspec-explore
+- plan: openspec-ff-change
+- proposal_review: 自审 → REVIEW_REPORT
+- execute: openspec-apply-change
+- verify: tasks.md ## Validation → VERIFICATION_REPORT
+- archive: openspec-archive-change（不同步 main spec）
+
+C0 未过禁止改 src/tests；不可推断 → failed + CLARIFY_BLOCKED（不 blocked 等人）。
+
+Skills: .cursor/skills/openspec-{explore,ff-change,apply-change,archive-change}
+可选: .agents/skills/symphony-v1-policy/SKILL.md
+```
+
+---
+
+# Cursor Policy V2（Subagent + Git，可选 prompt 段）
+
+V2 在 V1 上增加 Subagent 验证、`blocked` 等人、`submit`/push。prompt 要点：
+
+- proposal_review：`proposal-review-subagent`（Task readonly）
+- verify：`qa-verify-subagent`（主 agent 不得自证）
+- submit：`commit` + `push` skills
+
+Skills：`.agents/skills/{commit,push,proposal-review-subagent,qa-verify-subagent}/SKILL.md`
+
+详见 [symphony-agent-workflow.md](./symphony-agent-workflow.md#v2-模式subagent--git--人审)。
