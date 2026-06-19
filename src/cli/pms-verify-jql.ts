@@ -60,7 +60,9 @@ async function runSearch(
   return { ok: true, status: response.status, total, errorBody: "" };
 }
 
-export async function runPmsJqlVerify(argv: readonly string[]): Promise<number> {
+export async function runPmsJqlVerify(
+  argv: readonly string[],
+): Promise<number> {
   const workflowPath = argv[0] ?? "examples/workflow-pms/WORKFLOW.md";
   const workflow = await loadWorkflowDefinition(workflowPath);
   const config = resolveWorkflowConfig(workflow, process.env);
@@ -123,7 +125,12 @@ export async function runPmsJqlVerify(argv: readonly string[]): Promise<number> 
   ];
 
   const results: Array<
-    VerifyCase & { ok: boolean; status: number; total: number; errorBody: string }
+    VerifyCase & {
+      ok: boolean;
+      status: number;
+      total: number;
+      errorBody: string;
+    }
   > = [];
   let passCount = 0;
 

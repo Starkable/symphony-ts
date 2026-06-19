@@ -88,6 +88,37 @@ hooks:
   timeout_ms: 60000
 
 # ============================================================
+# workflow — V1.2 artifact-driven phases (optional)
+# Omit for legacy prompt-only mode. See docs/symphony-agent-workflow.md
+# ============================================================
+# workflow:
+#   version: "1.2"
+#   change_ref: kebab_case_issue_id
+#   phases:
+#     - id: clarify
+#       handler: openspec-new-change
+#       produces: openspec/changes/{change_ref}/proposal.md
+#     - id: proposal_review
+#       handler: openspec-proposal-review
+#       produces: openspec/changes/{change_ref}/proposal_review.md
+#       requires_pass: true
+#     - id: plan
+#       handler: openspec-continue-change
+#       produces: openspec/changes/{change_ref}/tasks.md
+#     - id: execute
+#       handler: openspec-apply-change
+#       produces: openspec/changes/{change_ref}/execute.md
+#       requires_pass: true
+#     - id: verify
+#       handler: openspec-verify
+#       produces: openspec/changes/{change_ref}/verification.md
+#       requires_pass: true
+#     - id: archive
+#       handler: openspec-archive-change
+#       produces: openspec/changes/{change_ref}/archive.md
+#       requires_pass: true
+
+# ============================================================
 # agent — Concurrency and retry behaviour
 # ============================================================
 agent:
@@ -239,6 +270,22 @@ observability:
   # Minimum spacing between pushed dashboard renders in milliseconds.
   # Default: 16 (~60 FPS upper bound)
   render_interval_ms: 16
+
+# ============================================================
+# artifact_store — Persistent workflow archives for Dashboard
+# ============================================================
+artifact_store:
+  # Enable workflow dashboard + export to a durable directory.
+  # Default: false
+  enabled: false
+
+  # Root directory for per-issue workflow archives (e.g. D:/symphony-artifacts or $SYMPHONY_ARTIFACT_STORE).
+  # Required when enabled is true.
+  root: null
+
+  # Restore workpad/openspec from store when a workspace is recreated.
+  # Default: false
+  hydrate_on_create: false
 ---
 
 You are implementing work for Linear issue {{ issue.identifier }}.
@@ -324,7 +371,7 @@ hooks:
     test -f openspec/config.yaml
 ```
 
-可选：设置 `SYMPHONY_POLICY_ROOT` 指向 symphony-ts 根目录，在 bootstrap 脚本中复制 skills。
+可选：设置 `SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle** 独立仓库（见 `examples/symphony-openspec-bundle/README.md`），`after_create` 调用 `bootstrap/install.sh`。
 
 若宿主机未装 CLI 或 init 失败 → hook 退出非 0；agent 应记 `Phase=failed`。
 
@@ -347,7 +394,7 @@ verify Phase 以该段为命令权威来源。
 Mode: v1-openspec
 ChangeRef = kebab-case({{ issue.identifier }})；仅 openspec/changes/<ChangeRef>/；禁止 AskUserQuestion 选 change。
 
-Phase（禁止跳步）：clarify→plan→proposal_review→execute→verify→archive→done
+Phase（禁止跳步，V1.1）：clarify→proposal_review→plan→execute→verify→archive→done
 - clarify: openspec-explore
 - plan: openspec-ff-change
 - proposal_review: 自审 → REVIEW_REPORT
@@ -357,8 +404,7 @@ Phase（禁止跳步）：clarify→plan→proposal_review→execute→verify→
 
 C0 未过禁止改 src/tests；不可推断 → failed + CLARIFY_BLOCKED（不 blocked 等人）。
 
-Skills: .cursor/skills/openspec-{explore,ff-change,apply-change,archive-change}
-可选: .agents/skills/symphony-v1-policy/SKILL.md
+Skills（install 后均在 `.cursor/skills/`）: symphony-v1-policy, symphony-clarify, symphony-proposal-review, symphony-plan, symphony-verify, openspec-{explore,new-change,continue-change,apply-change,archive-change}
 ```
 
 ---

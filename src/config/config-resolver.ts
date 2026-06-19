@@ -2,7 +2,10 @@ import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
 import { isCursorCommandAvailable } from "../agent/backends/cursor/cursor-command-resolve.js";
-import { normalizeIssueState, type WorkflowDefinition } from "../domain/model.js";
+import {
+  normalizeIssueState,
+  type WorkflowDefinition,
+} from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
 import {
   DEFAULT_ACTIVE_STATES,
@@ -24,6 +27,8 @@ import {
   DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE,
   DEFAULT_MAX_RETRY_BACKOFF_MS,
   DEFAULT_MAX_TURNS,
+  DEFAULT_ARTIFACT_STORE_ENABLED,
+  DEFAULT_ARTIFACT_STORE_HYDRATE,
   DEFAULT_OBSERVABILITY_ENABLED,
   DEFAULT_OBSERVABILITY_REFRESH_MS,
   DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
@@ -38,12 +43,17 @@ import {
   DEFAULT_WORKSPACE_ROOT,
   PMS_TRACKER_KIND,
 } from "./defaults.js";
+import {
+  parseSymphonyWorkflowConfig,
+  validateSymphonyWorkflowConfig,
+} from "./workflow-phases-parser.js";
 import type {
   AgentHarnessKind,
   CursorHarnessMode,
   CursorReusePolicy,
   DispatchValidationResult,
   ResolvedWorkflowConfig,
+  SymphonyWorkflowConfig,
   WorkflowCodexConfig,
   WorkflowCursorHarnessConfig,
   WorkflowTrackerOAuthConfig,
@@ -71,6 +81,8 @@ export function resolveWorkflowConfig(
   const harnessesCursor = asRecord(harnesses.cursor);
   const server = asRecord(config.server);
   const observability = asRecord(config.observability);
+  const artifactStore = asRecord(config.artifact_store);
+  const workflowConfig = parseSymphonyWorkflowConfig(config.workflow);
   const resolvedCodex = resolveCodexHarnessConfig(codex, harnessesCodex);
   const resolvedCursor = resolveCursorHarnessConfig(harnessesCursor);
   const trackerKind = readString(tracker.kind) ?? DEFAULT_TRACKER_KIND;
@@ -162,6 +174,19 @@ export function resolveWorkflowConfig(
         readPositiveInteger(observability.render_interval_ms) ??
         DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
     },
+    artifactStore: {
+      enabled:
+        readBoolean(artifactStore.enabled) ?? DEFAULT_ARTIFACT_STORE_ENABLED,
+      root: resolvePathValue(
+        readString(artifactStore.root),
+        workflow.workflowPath,
+        environment,
+      ),
+      hydrateOnCreate:
+        readBoolean(artifactStore.hydrate_on_create) ??
+        DEFAULT_ARTIFACT_STORE_HYDRATE,
+    },
+    workflow: workflowConfig,
   };
 }
 
@@ -177,7 +202,10 @@ export function validateDispatchConfig(
     );
   }
 
-  if (trackerKind !== DEFAULT_TRACKER_KIND && trackerKind !== PMS_TRACKER_KIND) {
+  if (
+    trackerKind !== DEFAULT_TRACKER_KIND &&
+    trackerKind !== PMS_TRACKER_KIND
+  ) {
     return invalid(
       ERROR_CODES.unsupportedTrackerKind,
       `tracker.kind '${trackerKind}' is not supported.`,
@@ -207,6 +235,11 @@ export function validateDispatchConfig(
     codex: config.codex,
     cursor: resolveCursorHarnessConfig({}),
   };
+
+  const workflowError = validateWorkflowConfigForDispatch(config.workflow);
+  if (workflowError !== null) {
+    return workflowError;
+  }
 
   if (config.agent.harness === "cursor") {
     const cursorError = validateCursorHarnessConfig(
@@ -405,6 +438,21 @@ function resolveTrackerOAuthConfig(
       readString(oauth.consumer_key)?.trim() || DEFAULT_PMS_CONSUMER_KEY,
     validateOnDispatch: readBoolean(oauth.validate_on_dispatch) ?? true,
   };
+}
+
+function validateWorkflowConfigForDispatch(
+  workflow: SymphonyWorkflowConfig | null,
+): DispatchValidationResult | null {
+  if (workflow === null) {
+    return null;
+  }
+
+  const message = validateSymphonyWorkflowConfig(workflow);
+  if (message !== null) {
+    return invalid(ERROR_CODES.configInvalid, message);
+  }
+
+  return null;
 }
 
 function invalid(code: string, message: string): DispatchValidationResult {

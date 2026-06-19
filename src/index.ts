@@ -18,6 +18,7 @@ export * from "./logging/runtime-snapshot.js";
 export * from "./logging/session-metrics.js";
 export * from "./logging/structured-logger.js";
 export * from "./observability/dashboard-server.js";
+export * from "./artifact-store/index.js";
 export * from "./orchestrator/core.js";
 export * from "./orchestrator/runtime-host.js";
 export * from "./workspace/hooks.js";

@@ -295,6 +295,23 @@ describe("dashboard server", () => {
     stream.close();
   });
 
+  it("returns workflow API 503 when artifact store is disabled", async () => {
+    const server = await startDashboardServer({
+      port: 0,
+      host: createHost(),
+    });
+    servers.push(server);
+
+    const response = await sendRequest(server.port, {
+      method: "GET",
+      path: "/api/v1/workflows",
+    });
+    expect(response.statusCode).toBe(503);
+    expect(JSON.parse(response.body).error.code).toBe(
+      "artifact_store_disabled",
+    );
+  });
+
   it("returns a plain 404 for undefined routes", async () => {
     const server = await startDashboardServer({
       port: 0,

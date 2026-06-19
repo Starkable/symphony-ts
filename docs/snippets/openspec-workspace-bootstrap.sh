@@ -3,9 +3,10 @@
 #
 # Prerequisites (manual, on Symphony host, once):
 #   - openspec CLI on PATH (openspec --version)
+#   - symphony-openspec-bundle cloned; SYMPHONY_POLICY_ROOT points at bundle root
 #   - Cursor agent CLI, symphony-ts, tracker credentials (see docs/symphony-agent-workflow.md)
 #
-# This script does NOT install openspec. It initializes openspec/ in the workspace when missing.
+# Runtime skills 来自独立仓 symphony-openspec-bundle，不从 symphony-ts 拷贝。
 
 set -euo pipefail
 
@@ -20,16 +21,13 @@ if [ ! -f openspec/config.yaml ]; then
   exit 1
 fi
 
-# Optional: copy Policy / OpenSpec skills when SYMPHONY_POLICY_ROOT points at symphony-ts (or a policy bundle).
-if [ -n "${SYMPHONY_POLICY_ROOT:-}" ] && [ -d "${SYMPHONY_POLICY_ROOT}/.cursor/skills" ]; then
-  mkdir -p .cursor/skills .agents/skills
-  for skill in "${SYMPHONY_POLICY_ROOT}/.cursor/skills"/openspec-*; do
-    [ -e "$skill" ] || continue
-    cp -r "$skill" .cursor/skills/
-  done
-  if [ -d "${SYMPHONY_POLICY_ROOT}/.agents/skills/symphony-v1-policy" ]; then
-    cp -r "${SYMPHONY_POLICY_ROOT}/.agents/skills/symphony-v1-policy" .agents/skills/
-  fi
+if [ -n "${SYMPHONY_POLICY_ROOT:-}" ] && [ -f "${SYMPHONY_POLICY_ROOT}/bootstrap/install.sh" ]; then
+  bash "${SYMPHONY_POLICY_ROOT}/bootstrap/install.sh" "$(pwd)"
+elif [ -n "${SYMPHONY_POLICY_ROOT:-}" ]; then
+  echo "SYMPHONY_POLICY_ROOT set but bootstrap/install.sh not found: ${SYMPHONY_POLICY_ROOT}" >&2
+  exit 1
+else
+  echo "[bootstrap] SYMPHONY_POLICY_ROOT 未设置，仅 openspec init，无 V1.1 定制 skills" >&2
 fi
 
 echo "openspec workspace bootstrap ok"

@@ -16,7 +16,9 @@ function createTestClient(fetchFn: typeof fetch): PmsTrackerClient {
       consumerKey: "qa-monitor",
       accessToken: "access-token",
       accessTokenSecret: "access-secret",
-      privateKeyPem: privateKey.export({ type: "pkcs1", format: "pem" }).toString(),
+      privateKeyPem: privateKey
+        .export({ type: "pkcs1", format: "pem" })
+        .toString(),
     },
     pageSize: 50,
     fetchFn,

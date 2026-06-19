@@ -594,6 +594,11 @@ function createConfig(overrides?: {
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+    },
   });
 }
 

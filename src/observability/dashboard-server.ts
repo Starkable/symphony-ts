@@ -25,6 +25,12 @@ import {
   type DashboardRenderOptions,
   renderDashboardHtml,
 } from "./dashboard-render.js";
+import {
+  renderWorkflowDashboardHtml,
+  renderWorkflowDetailHtml,
+  renderWorkflowHistoryHtml,
+} from "./workflow-render.js";
+import type { WorkflowListStatus } from "./workflow-service.js";
 
 const DEFAULT_SNAPSHOT_TIMEOUT_MS = 1_000;
 
@@ -92,6 +98,17 @@ export interface DashboardServerHost {
   ): IssueDetailResponse | null | Promise<IssueDetailResponse | null>;
   requestRefresh(): RefreshResponse | Promise<RefreshResponse>;
   subscribeToSnapshots?(listener: () => void): () => void;
+  isWorkflowDashboardEnabled?(): boolean;
+  listWorkflows?(
+    status: WorkflowListStatus,
+  ): Promise<import("../artifact-store/types.js").WorkflowSummary[]>;
+  getWorkflowDetail?(
+    issueIdentifier: string,
+  ): Promise<import("../artifact-store/types.js").WorkflowDetail | null>;
+  readWorkflowArtifact?(
+    issueIdentifier: string,
+    relativePath: string,
+  ): Promise<{ content: string; contentType: string } | null>;
 }
 
 export interface DashboardServerOptions {
@@ -202,7 +219,67 @@ export function createDashboardRequestHandler(
         }
 
         const snapshot = await readSnapshot(options.host, snapshotTimeoutMs);
+        if (isWorkflowHostEnabled(options.host)) {
+          const workflows = await options.host.listWorkflows!("active");
+          const archived = await options.host.listWorkflows!("archived");
+          writeHtml(
+            response,
+            200,
+            renderWorkflowDashboardHtml({
+              snapshot,
+              workflows,
+              recentArchived: archived,
+              options: renderOptions,
+            }),
+          );
+          return;
+        }
+
         writeHtml(response, 200, renderDashboardHtml(snapshot, renderOptions));
+        return;
+      }
+
+      if (url.pathname === "/history") {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (!isWorkflowHostEnabled(options.host)) {
+          writeNotFound(response, url.pathname);
+          return;
+        }
+
+        const archived = await options.host.listWorkflows!("archived");
+        writeHtml(response, 200, renderWorkflowHistoryHtml(archived));
+        return;
+      }
+
+      if (url.pathname.startsWith("/issues/")) {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (!isWorkflowHostEnabled(options.host)) {
+          writeNotFound(response, url.pathname);
+          return;
+        }
+
+        const issueIdentifier = decodeURIComponent(
+          url.pathname.slice("/issues/".length),
+        );
+        const detail = await options.host.getWorkflowDetail!(issueIdentifier);
+        if (detail === null) {
+          writeNotFound(response, url.pathname);
+          return;
+        }
+
+        writeHtml(
+          response,
+          200,
+          renderWorkflowDetailHtml(detail, renderOptions),
+        );
         return;
       }
 
@@ -248,6 +325,87 @@ export function createDashboardRequestHandler(
         await readRequestBody(request);
         const refresh = await options.host.requestRefresh();
         writeJson(response, 202, refresh);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/workflows") {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (!isWorkflowHostEnabled(options.host)) {
+          writeJsonError(response, 503, ERROR_CODES.artifactStoreDisabled, {
+            message:
+              "Workflow dashboard requires artifact_store to be enabled.",
+          });
+          return;
+        }
+
+        const status = parseWorkflowListStatus(url.searchParams.get("status"));
+        const workflows = await options.host.listWorkflows!(status);
+        writeJson(response, 200, { workflows });
+        return;
+      }
+
+      if (url.pathname.startsWith("/api/v1/workflows/")) {
+        if (method !== "GET") {
+          writeMethodNotAllowed(response, ["GET"]);
+          return;
+        }
+
+        if (!isWorkflowHostEnabled(options.host)) {
+          writeJsonError(response, 503, ERROR_CODES.artifactStoreDisabled, {
+            message:
+              "Workflow dashboard requires artifact_store to be enabled.",
+          });
+          return;
+        }
+
+        const remainder = decodeURIComponent(
+          url.pathname.slice("/api/v1/workflows/".length),
+        );
+        const segments = remainder.split("/").filter((part) => part.length > 0);
+        const issueIdentifier = segments[0] ?? "";
+
+        if (segments.length === 1) {
+          const detail = await options.host.getWorkflowDetail!(issueIdentifier);
+          if (detail === null) {
+            writeJsonError(response, 404, ERROR_CODES.issueNotFound, {
+              message: `Workflow '${issueIdentifier}' was not found.`,
+            });
+            return;
+          }
+          writeJson(response, 200, detail);
+          return;
+        }
+
+        if (segments[1] === "artifacts" && segments.length >= 3) {
+          const relativePath = segments.slice(2).join("/");
+          const artifact = await options.host.readWorkflowArtifact!(
+            issueIdentifier,
+            relativePath,
+          );
+          if (artifact === null) {
+            writeJsonError(response, 404, ERROR_CODES.issueNotFound, {
+              message: `Artifact '${relativePath}' was not found.`,
+            });
+            return;
+          }
+          response.statusCode = 200;
+          response.setHeader("content-type", artifact.contentType);
+          response.end(artifact.content);
+          return;
+        }
+
+        if (segments[1] === "live") {
+          writeJsonError(response, 501, ERROR_CODES.snapshotUnavailable, {
+            message: "Live workflow streaming is not implemented yet.",
+          });
+          return;
+        }
+
+        writeNotFound(response, url.pathname);
         return;
       }
 
@@ -317,4 +475,21 @@ function writeMethodNotAllowed(
     message: "Method not allowed.",
     allow,
   });
+}
+
+function isWorkflowHostEnabled(host: DashboardServerHost): boolean {
+  return (
+    typeof host.isWorkflowDashboardEnabled === "function" &&
+    host.isWorkflowDashboardEnabled() === true &&
+    typeof host.listWorkflows === "function" &&
+    typeof host.getWorkflowDetail === "function" &&
+    typeof host.readWorkflowArtifact === "function"
+  );
+}
+
+function parseWorkflowListStatus(value: string | null): WorkflowListStatus {
+  if (value === "archived" || value === "all") {
+    return value;
+  }
+  return "active";
 }

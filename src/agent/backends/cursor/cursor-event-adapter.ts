@@ -43,7 +43,8 @@ export function mapCursorCliResultToHarnessEvent(
   if (result.terminalEvent !== null) {
     return {
       ...result.terminalEvent,
-      sessionId: result.terminalEvent.sessionId ?? result.sessionId ?? input.chatId,
+      sessionId:
+        result.terminalEvent.sessionId ?? result.sessionId ?? input.chatId,
       turnId: result.terminalEvent.turnId ?? `turn-${input.turnNumber}`,
     };
   }

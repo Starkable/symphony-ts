@@ -96,6 +96,26 @@ export interface WorkflowObservabilityConfig {
   renderIntervalMs: number;
 }
 
+export interface WorkflowArtifactStoreConfig {
+  enabled: boolean;
+  root: string | null;
+  hydrateOnCreate: boolean;
+}
+
+export interface WorkflowPhaseConfig {
+  id: string;
+  handler: string;
+  produces: string;
+  requiresPass: boolean;
+}
+
+/** V1.2 artifact-driven workflow table from WORKFLOW front matter. */
+export interface SymphonyWorkflowConfig {
+  version: string | null;
+  changeRefStrategy: string | null;
+  phases: WorkflowPhaseConfig[];
+}
+
 export interface ResolvedWorkflowConfig {
   workflowPath: string;
   promptTemplate: string;
@@ -109,6 +129,9 @@ export interface ResolvedWorkflowConfig {
   codex: WorkflowCodexConfig;
   server: WorkflowServerConfig;
   observability: WorkflowObservabilityConfig;
+  artifactStore: WorkflowArtifactStoreConfig;
+  /** V1.2 workflow.phases table; null when absent (legacy prompt-only mode). */
+  workflow: SymphonyWorkflowConfig | null;
 }
 
 export interface DispatchValidationFailure {

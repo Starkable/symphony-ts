@@ -60,7 +60,7 @@ export interface LinearTrackerClientOptions {
 
 // 线性跟踪器客户端：线性跟踪器客户端
 export class LinearTrackerClient implements IssueTracker {
-  // 端点：端点 
+  // 端点：端点
   private readonly endpoint: string;
   //  API密钥：API密钥
   private readonly apiKey: string | null;

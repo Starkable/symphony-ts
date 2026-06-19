@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import type { AgentRunnerEvent } from "../../src/agent/runner.js";
+import type { AgentHarness } from "../../src/agent/harness/agent-harness.js";
 import type {
-  AgentRunResult,
-  AgentRunnerEvent,
-} from "../../src/agent/runner.js";
+  HarnessRunInput,
+  HarnessRunResult,
+} from "../../src/agent/harness/types.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
 import type { Issue } from "../../src/domain/model.js";
 import {
@@ -15,6 +20,7 @@ import type {
   IssueStateSnapshot,
   IssueTracker,
 } from "../../src/tracker/tracker.js";
+import { WorkspaceManager } from "../../src/workspace/workspace-manager.js";
 import {
   DEFAULT_TEST_CODEX_CONFIG,
   withHarnessConfig,
@@ -228,9 +234,64 @@ describe("OrchestratorRuntimeHost", () => {
     expect(details).toMatchObject({
       issue_identifier: "RENAMED-2",
       workspace: {
-        path: "/tmp/workspaces/1",
+        path: expect.stringContaining("workspaces"),
       },
     });
+  });
+
+  it("exports workflow manifest to artifact store after turn_completed", async () => {
+    const storeRoot = await mkdtemp(join(tmpdir(), "symphony-host-store-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "symphony-host-ws-"));
+    const tracker = createTracker();
+    const fakeRunner = new FakeAgentRunner();
+    const workspaceManager = new WorkspaceManager({ root: workspaceRoot });
+    const host = new OrchestratorRuntimeHost({
+      config: createConfig({
+        workspace: { root: workspaceRoot },
+        artifactStore: {
+          enabled: true,
+          root: storeRoot,
+          hydrateOnCreate: false,
+        },
+      }),
+      tracker,
+      workspaceManager,
+      createAgentRunner: ({ onEvent }) => {
+        fakeRunner.onEvent = onEvent;
+        return fakeRunner;
+      },
+      now: () => new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    await host.pollOnce();
+
+    const workspacePath = workspaceManager.resolveForIssue("1").workspacePath;
+    await mkdir(join(workspacePath, ".symphony"), { recursive: true });
+    await writeFile(
+      join(workspacePath, ".symphony", "workpad.md"),
+      "### Meta\n- Phase: clarify\n- ChangeRef: issue-1\n",
+      "utf8",
+    );
+
+    fakeRunner.emit("1", {
+      event: "turn_completed",
+      timestamp: "2026-03-06T00:00:02.000Z",
+      codexAppServerPid: "1001",
+      sessionId: "thread-1-turn-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      turnCount: 1,
+      message: "turn completed",
+    });
+    await host.flushEvents();
+
+    const manifest = JSON.parse(
+      await readFile(join(storeRoot, "ISSUE-1", "manifest.json"), "utf8"),
+    );
+    expect(manifest.issue_identifier).toBe("ISSUE-1");
+    expect(
+      manifest.phases.some((phase: { id: string }) => phase.id === "clarify"),
+    ).toBe(true);
   });
 
   it("emits issue and session context for agent lifecycle logs", async () => {
@@ -284,23 +345,19 @@ describe("OrchestratorRuntimeHost", () => {
   });
 });
 
-class FakeAgentRunner {
+class FakeAgentRunner implements AgentHarness {
   onEvent: ((event: AgentRunnerEvent) => void) | undefined;
   readonly runs = new Map<
     string,
     {
-      resolve: (result: AgentRunResult) => void;
+      resolve: (result: HarnessRunResult) => void;
       reject: (error: Error) => void;
     }
   >();
   readonly abortReasons: string[] = [];
 
-  async run(input: {
-    issue: Issue;
-    attempt: number | null;
-    signal?: AbortSignal;
-  }): Promise<AgentRunResult> {
-    return await new Promise<AgentRunResult>((resolve, reject) => {
+  async run(input: HarnessRunInput): Promise<HarnessRunResult> {
+    return await new Promise<HarnessRunResult>((resolve, reject) => {
       this.runs.set(input.issue.id, { resolve, reject });
       input.signal?.addEventListener(
         "abort",
@@ -335,7 +392,7 @@ class FakeAgentRunner {
     });
   }
 
-  resolve(issueId: string, result: AgentRunResult): void {
+  resolve(issueId: string, result: HarnessRunResult): void {
     const run = this.runs.get(issueId);
     if (run === undefined) {
       throw new Error(`No fake run registered for ${issueId}.`);
@@ -387,7 +444,9 @@ function createIssue(overrides?: Partial<Issue>): Issue {
   };
 }
 
-function createConfig(): ResolvedWorkflowConfig {
+function createConfig(
+  overrides: Partial<ResolvedWorkflowConfig> = {},
+): ResolvedWorkflowConfig {
   return withHarnessConfig({
     workflowPath: "/tmp/WORKFLOW.md",
     promptTemplate: "Prompt",
@@ -401,12 +460,15 @@ function createConfig(): ResolvedWorkflowConfig {
       issueTypes: [],
       excludeDraftStatus: false,
       oauth: null,
+      ...overrides.tracker,
     },
     polling: {
       intervalMs: 30_000,
+      ...overrides.polling,
     },
     workspace: {
       root: "/tmp/workspaces",
+      ...overrides.workspace,
     },
     hooks: {
       afterCreate: null,
@@ -414,21 +476,32 @@ function createConfig(): ResolvedWorkflowConfig {
       afterRun: null,
       beforeRemove: null,
       timeoutMs: 30_000,
+      ...overrides.hooks,
     },
     agent: {
       maxConcurrentAgents: 2,
       maxTurns: 5,
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
+      ...overrides.agent,
     },
     codex: DEFAULT_TEST_CODEX_CONFIG,
     server: {
       port: null,
+      ...overrides.server,
     },
     observability: {
       dashboardEnabled: true,
       refreshMs: 1_000,
       renderIntervalMs: 16,
+      ...overrides.observability,
     },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+      ...overrides.artifactStore,
+    },
+    ...overrides,
   });
 }

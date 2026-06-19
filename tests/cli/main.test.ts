@@ -277,8 +277,16 @@ function createConfig(
       renderIntervalMs: 16,
       ...overrides.observability,
     },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+      ...overrides.artifactStore,
+    },
     ...overrides,
     codex,
-    harnesses: overrides.harnesses,
+    ...(overrides.harnesses === undefined
+      ? {}
+      : { harnesses: overrides.harnesses }),
   });
 }

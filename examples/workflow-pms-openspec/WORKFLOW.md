@@ -67,21 +67,21 @@ harnesses:
 2. 按 Phase 执行唯一允许动作（**禁止跳步**）
 3. 更新 Gate Log
 
-## Phase 路由
+## Phase 路由（V1.1）
 
 | Phase | Skill / 动作 |
 |-------|----------------|
-| clarify | `openspec-explore` |
-| plan | `openspec-ff-change` |
-| proposal_review | 自审 → `REVIEW_REPORT` |
+| clarify | 写 `proposal.md`（策略包 `symphony-clarify`） |
+| proposal_review | 评审报告 + `REVIEW_REPORT` |
+| plan | `openspec-continue-change` 至 tasks |
 | execute | `openspec-apply-change` |
 | verify | `tasks.md ## Validation` → `VERIFICATION_REPORT` |
-| archive | `openspec-archive-change` |
+| archive | `openspec-archive-change` + 归档说明 |
 | done | 结束 |
 
 C0 未过禁止改代码；不可推断 → `failed` + `CLARIFY_BLOCKED`。
 
 ## Skills
 
-`.cursor/skills/openspec-{explore,ff-change,apply-change,archive-change}/SKILL.md`  
-可选：`.agents/skills/symphony-v1-policy/SKILL.md`
+`SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle** 独立仓库；`bootstrap/install.sh` 部署全部 skills。  
+`.cursor/skills/` 含 openspec-* 与 symphony-*（install 后）。

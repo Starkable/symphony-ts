@@ -54,7 +54,10 @@ function toPmsSearchError(
   let message = `PMS search request failed with HTTP ${status}.`;
   try {
     const parsed = JSON.parse(errorBody) as { errorMessages?: unknown };
-    if (Array.isArray(parsed.errorMessages) && parsed.errorMessages.length > 0) {
+    if (
+      Array.isArray(parsed.errorMessages) &&
+      parsed.errorMessages.length > 0
+    ) {
       const details = parsed.errorMessages
         .filter((entry): entry is string => typeof entry === "string")
         .join("; ");
@@ -130,7 +133,11 @@ export class PmsTrackerClient implements IssueTracker {
     const accessTokenSecret = oauthConfig.accessTokenSecret?.trim() ?? "";
     const rsaPrivateKeyPath = oauthConfig.rsaPrivateKeyPath?.trim() ?? "";
 
-    if (accessToken === "" || accessTokenSecret === "" || rsaPrivateKeyPath === "") {
+    if (
+      accessToken === "" ||
+      accessTokenSecret === "" ||
+      rsaPrivateKeyPath === ""
+    ) {
       throw new TrackerError(
         ERROR_CODES.trackerCredentialsMissing,
         "PMS OAuth access token, secret, and RSA private key path are required.",
@@ -202,7 +209,9 @@ export class PmsTrackerClient implements IssueTracker {
     };
   }
 
-  async fetchIssueStatesByIds(issueIds: string[]): Promise<IssueStateSnapshot[]> {
+  async fetchIssueStatesByIds(
+    issueIds: string[],
+  ): Promise<IssueStateSnapshot[]> {
     if (issueIds.length === 0) {
       return [];
     }
@@ -217,7 +226,10 @@ export class PmsTrackerClient implements IssueTracker {
     return nodes.map((node) => normalizePmsIssue(node, this.browseBaseUrl));
   }
 
-  private async searchIssueNodes(jql: string, fields: string): Promise<unknown[]> {
+  private async searchIssueNodes(
+    jql: string,
+    fields: string,
+  ): Promise<unknown[]> {
     const nodes: unknown[] = [];
     let startAt = 0;
     const fieldList = resolveSearchFieldList(fields);
@@ -273,7 +285,11 @@ export class PmsTrackerClient implements IssueTracker {
     url: string,
     jsonBody?: Record<string, unknown>,
   ): Promise<Response> {
-    const authorization = buildOAuthAuthorizationHeader(method, url, this.oauth);
+    const authorization = buildOAuthAuthorizationHeader(
+      method,
+      url,
+      this.oauth,
+    );
     const controller = new AbortController();
     const timeout = setTimeout(() => {
       controller.abort();

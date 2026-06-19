@@ -70,6 +70,7 @@ describe("config-resolver", () => {
     expect(resolved.observability.renderIntervalMs).toBe(
       DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
     );
+    expect(resolved.workflow).toBeNull();
   });
 
   it("coerces env-backed fields, path-like roots, and state limits", () => {
@@ -148,6 +149,34 @@ describe("config-resolver", () => {
     expect(resolved.observability.dashboardEnabled).toBe(false);
     expect(resolved.observability.refreshMs).toBe(2_500);
     expect(resolved.observability.renderIntervalMs).toBe(33);
+  });
+
+  it("parses artifact_store settings with defaults", () => {
+    const disabled = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {},
+    });
+    expect(disabled.artifactStore).toEqual({
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+    });
+
+    const enabled = resolveWorkflowConfig({
+      workflowPath: "/repo/WORKFLOW.md",
+      promptTemplate: "Prompt",
+      config: {
+        artifact_store: {
+          enabled: true,
+          root: "/repo/artifacts",
+          hydrate_on_create: true,
+        },
+      },
+    });
+    expect(enabled.artifactStore.enabled).toBe(true);
+    expect(enabled.artifactStore.hydrateOnCreate).toBe(true);
+    expect(enabled.artifactStore.root).toContain("artifacts");
   });
 
   it("accepts server.port zero for ephemeral listener binding", () => {
@@ -495,7 +524,8 @@ describe("config-resolver", () => {
       ok: false,
       error: {
         code: ERROR_CODES.trackerCredentialsMissing,
-        message: "tracker.oauth.access_token must be configured before dispatch.",
+        message:
+          "tracker.oauth.access_token must be configured before dispatch.",
       },
     });
   });

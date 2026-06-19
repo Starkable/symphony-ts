@@ -82,6 +82,12 @@ function baseConfig(
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+    },
+    workflow: null,
   };
 }
 
@@ -122,8 +128,8 @@ describe("tracker-factory", () => {
   });
 
   it("throws for unsupported tracker kinds", () => {
-    expect(() =>
-      createIssueTracker(baseConfig({ kind: "jira" })),
-    ).toThrowError(TrackerError);
+    expect(() => createIssueTracker(baseConfig({ kind: "jira" }))).toThrowError(
+      TrackerError,
+    );
   });
 });

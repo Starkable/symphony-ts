@@ -11,8 +11,11 @@ import { LinearTrackerClient } from "./linear-client.js";
 import { PmsTrackerClient } from "./pms/pms-client.js";
 import type { IssueTracker } from "./tracker.js";
 
-export function createIssueTracker(config: ResolvedWorkflowConfig): IssueTracker {
-  const kind = config.tracker.kind?.trim().toLowerCase() ?? DEFAULT_TRACKER_KIND;
+export function createIssueTracker(
+  config: ResolvedWorkflowConfig,
+): IssueTracker {
+  const kind =
+    config.tracker.kind?.trim().toLowerCase() ?? DEFAULT_TRACKER_KIND;
 
   switch (kind) {
     case PMS_TRACKER_KIND:

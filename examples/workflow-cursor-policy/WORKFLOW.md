@@ -36,6 +36,34 @@ agent:
   max_concurrent_agents: 3
   max_turns: 25
 
+# V1.2 artifact-driven workflow (optional; omit for legacy prompt-only)
+workflow:
+  version: "1.2"
+  change_ref: kebab_case_issue_id
+  phases:
+    - id: clarify
+      handler: openspec-new-change
+      produces: openspec/changes/{change_ref}/proposal.md
+    - id: proposal_review
+      handler: openspec-proposal-review
+      produces: openspec/changes/{change_ref}/proposal_review.md
+      requires_pass: true
+    - id: plan
+      handler: openspec-continue-change
+      produces: openspec/changes/{change_ref}/tasks.md
+    - id: execute
+      handler: openspec-apply-change
+      produces: openspec/changes/{change_ref}/execute.md
+      requires_pass: true
+    - id: verify
+      handler: openspec-verify
+      produces: openspec/changes/{change_ref}/verification.md
+      requires_pass: true
+    - id: archive
+      handler: openspec-archive-change
+      produces: openspec/changes/{change_ref}/archive.md
+      requires_pass: true
+
 harnesses:
   cursor:
     command: agent
@@ -51,10 +79,10 @@ server:
 你正在处理工作项 {{ issue.identifier }}：{{ issue.title }}。
 
 {% if attempt %}
-续跑上下文：第 {{ attempt }} 次 worker 续派；从 `.symphony/workpad.md` 当前 Phase 继续，勿重复已完成步骤。
+续跑上下文：第 {{ attempt }} 次 worker 续派。
 {% endif %}
 
-**Mode: v1-openspec** — 完整说明见 `docs/symphony-agent-workflow.md`。
+**Mode: v1.2-openspec** — 完整说明见 `docs/symphony-agent-workflow.md`。
 
 ## ChangeRef（硬绑定）
 
@@ -62,42 +90,13 @@ server:
 - 仅操作 `openspec/changes/<ChangeRef>/`
 - **禁止** AskUserQuestion 选择 change 名称
 
-## 首要动作
+## 规则
 
-1. 读取或初始化 `.symphony/workpad.md`（`Mode: v1-openspec`，模板见 `docs/symphony-agent-workflow.md`）
-2. 根据 **Phase** 执行本 turn **唯一**允许的动作
-3. turn 结束前更新 Gate Log 与 Notes
-
-## Phase 路由（禁止跳步）
-
-| Phase | 允许 | 禁止 |
-|-------|------|------|
-| clarify | `openspec-explore`；更新 Clarification / Assumptions | 改 src/tests；`openspec new` |
-| plan | `openspec-ff-change`（或 propose）；更新 openspec 制品 | 改 src/tests |
-| proposal_review | 自审 openspec 制品；写 `REVIEW_REPORT` | 改 src/tests |
-| execute | `openspec-apply-change` | 跳过 verify |
-| verify | 跑 `tasks.md` 的 `## Validation`；写 `VERIFICATION_REPORT` | 无报告进 archive |
-| archive | `openspec-archive-change`（不同步 main spec） | — |
-| done / failed | 结束 turn | 改 src/tests |
-
-合法回退：verify FAIL → `execute`；REVIEW FAIL → `plan`/`proposal_review`；环境失败 → `failed`。
-
-## C0
-
-Clarification 未完成 → **禁止** plan/execute、**禁止**改 `src/`/`tests/`。  
-高影响 unknown 不可推断 → `Phase=failed`，Notes：`CLARIFY_BLOCKED: …`，正常结束 turn。
-
-## Gate
-
-- P2：无 `REVIEW_REPORT: PASS` 不得 `execute`
-- V1：无 `VERIFICATION_REPORT: PASS` 不得 `archive`
+1. 按 Symphony 注入的 `effective_phase`、`/{handler}`、`produces` 路径执行本 turn 唯一动作
+2. 阶段进度以 **产物文件** 为准，不维护 workpad Phase
+3. `requires_pass` 阶段须在产物 front matter 写 `status: pass` 后才算完成
+4. 禁止未授权 git push；Validation 命令见 `tasks.md` 末尾 `## Validation`
 
 ## Skills
 
-- `.cursor/skills/openspec-explore/SKILL.md`
-- `.cursor/skills/openspec-ff-change/SKILL.md`
-- `.cursor/skills/openspec-apply-change/SKILL.md`
-- `.cursor/skills/openspec-archive-change/SKILL.md`
-- 可选：`.agents/skills/symphony-v1-policy/SKILL.md`
-
-V1 **不使用** commit、push、qa-verify-subagent、proposal-review-subagent。
+策略包（`SYMPHONY_POLICY_ROOT` → `symphony-openspec-bundle`）install 后位于 `.cursor/skills/`。

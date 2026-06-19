@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../../src/agent/backends/cursor/cursor-command-resolve.js", () => ({
-  resolveCursorSpawnSpec: vi.fn((configCommand: string, cliArgs: string[]) => ({
-    command: configCommand,
-    args: cliArgs,
-    resolvedPath: configCommand,
-  })),
-}));
+vi.mock(
+  "../../../../src/agent/backends/cursor/cursor-command-resolve.js",
+  () => ({
+    resolveCursorSpawnSpec: vi.fn(
+      (configCommand: string, cliArgs: string[]) => ({
+        command: configCommand,
+        args: cliArgs,
+        resolvedPath: configCommand,
+      }),
+    ),
+  }),
+);
 
 import { CursorAgentHarness } from "../../../../src/agent/backends/cursor/cursor-harness.js";
 import type {
@@ -90,7 +95,9 @@ describe("CursorAgentHarness", () => {
     expect(events).toContain("notification");
     expect(events).toContain("other_message");
     expect(events).toContain("turn_completed");
-    expect(events.filter((kind) => kind === "other_message").length).toBeGreaterThanOrEqual(1);
+    expect(
+      events.filter((kind) => kind === "other_message").length,
+    ).toBeGreaterThanOrEqual(1);
     expect(result.lastTurn?.sessionId).toBe("chat-123");
     expect(result.turnsCompleted).toBe(1);
   });
@@ -130,7 +137,9 @@ describe("CursorAgentHarness", () => {
       attempt: null,
     });
 
-    const startLog = logEntries.find((entry) => entry.event === "cursor_turn_start");
+    const startLog = logEntries.find(
+      (entry) => entry.event === "cursor_turn_start",
+    );
     const finishLog = logEntries.find(
       (entry) => entry.event === "cursor_turn_finished",
     );
@@ -190,6 +199,11 @@ function buildHarnessConfig(
       dashboardEnabled: true,
       refreshMs: 1_000,
       renderIntervalMs: 16,
+    },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
     },
   });
 }

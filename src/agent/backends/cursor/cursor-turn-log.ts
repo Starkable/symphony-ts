@@ -42,7 +42,10 @@ export function redactCursorCliArgs(
   return redacted;
 }
 
-export function formatCursorInvocation(command: string, args: string[]): string {
+export function formatCursorInvocation(
+  command: string,
+  args: string[],
+): string {
   return [command, ...args].join(" ");
 }
 
@@ -70,7 +73,10 @@ export function extractThinkingFromCursorOutput(text: string): string | null {
   return null;
 }
 
-export function truncateForStructuredLog(text: string, maxBytes: number): string {
+export function truncateForStructuredLog(
+  text: string,
+  maxBytes: number,
+): string {
   if (maxBytes <= 0) {
     return "";
   }
@@ -134,11 +140,9 @@ export async function appendCursorTurnArtifactChunk(input: {
     return;
   }
 
-  await appendFile(
-    input.artifactPath,
-    `[${input.stream}]\n${input.text}`,
-    { encoding: "utf8" },
-  );
+  await appendFile(input.artifactPath, `[${input.stream}]\n${input.text}`, {
+    encoding: "utf8",
+  });
 }
 
 export async function finalizeCursorTurnArtifact(input: {
@@ -168,7 +172,9 @@ export async function finalizeCursorTurnArtifact(input: {
     sections.push("[stdout]", input.stdout, "", "[stderr]", input.stderr, "");
   }
 
-  await appendFile(input.artifactPath, sections.join("\n"), { encoding: "utf8" });
+  await appendFile(input.artifactPath, sections.join("\n"), {
+    encoding: "utf8",
+  });
 }
 
 function extractFencedThinking(text: string): string | null {
@@ -196,11 +202,7 @@ function extractFencedThinking(text: string): string | null {
 
 function extractLineBasedThinking(text: string): string | null {
   const lines = text.split(/\r?\n/);
-  const prefixes = [
-    /^thinking:\s*/i,
-    /^reasoning:\s*/i,
-    /^思考[:：]\s*/,
-  ];
+  const prefixes = [/^thinking:\s*/i, /^reasoning:\s*/i, /^思考[:：]\s*/];
   const collected: string[] = [];
 
   for (const line of lines) {

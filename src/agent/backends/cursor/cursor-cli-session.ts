@@ -40,7 +40,9 @@ export interface CursorCliRunResult {
   terminalEvent: HarnessRuntimeEvent | null;
 }
 
-export type CursorCliRunner = (input: CursorCliRunInput) => Promise<CursorCliRunResult>;
+export type CursorCliRunner = (
+  input: CursorCliRunInput,
+) => Promise<CursorCliRunResult>;
 
 export async function runCursorCli(
   input: CursorCliRunInput,
@@ -90,13 +92,15 @@ export async function runCursorCli(
 
     const onAbort = () => {
       child.kill("SIGTERM");
-      finish(buildRunResult({
-        exitCode: 1,
-        stdout,
-        stderr: `${stderr}\naborted`.trim(),
-        timedOut: false,
-        parser,
-      }));
+      finish(
+        buildRunResult({
+          exitCode: 1,
+          stdout,
+          stderr: `${stderr}\naborted`.trim(),
+          timedOut: false,
+          parser,
+        }),
+      );
     };
 
     input.signal?.addEventListener("abort", onAbort, { once: true });
@@ -112,14 +116,16 @@ export async function runCursorCli(
         sessionId: parser.getState().sessionId,
       });
       input.onHarnessEvent?.(timeoutEvent);
-      finish(buildRunResult({
-        exitCode: 1,
-        stdout,
-        stderr: `${stderr}\nturn timed out`.trim(),
-        timedOut: true,
-        parser,
-        terminalEvent: timeoutEvent,
-      }));
+      finish(
+        buildRunResult({
+          exitCode: 1,
+          stdout,
+          stderr: `${stderr}\nturn timed out`.trim(),
+          timedOut: true,
+          parser,
+          terminalEvent: timeoutEvent,
+        }),
+      );
     }, input.turnTimeoutMs);
 
     const processStdoutLines = (text: string) => {
@@ -173,14 +179,16 @@ export async function runCursorCli(
         input.onHarnessEvent?.(terminalEvent);
       }
 
-      finish(buildRunResult({
-        exitCode,
-        stdout,
-        stderr,
-        timedOut,
-        parser,
-        terminalEvent,
-      }));
+      finish(
+        buildRunResult({
+          exitCode,
+          stdout,
+          stderr,
+          timedOut,
+          parser,
+          terminalEvent,
+        }),
+      );
     });
   });
 }

@@ -13,11 +13,14 @@ import {
 import { applyHarnessEventToSession } from "../../../logging/session-metrics.js";
 import type { StructuredLogger } from "../../../logging/structured-logger.js";
 import type { IssueTracker } from "../../../tracker/tracker.js";
+import { resolveWorkflowDispatchContext } from "../../../workflow/workflow-dispatch.js";
 import { WorkspaceHookRunner } from "../../../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../../../workspace/path-safety.js";
 import { WorkspaceManager } from "../../../workspace/workspace-manager.js";
-import { buildTurnPrompt } from "../../prompt-builder.js";
-import type { AgentHarness, AgentHarnessFactoryInput } from "../../harness/agent-harness.js";
+import type {
+  AgentHarness,
+  AgentHarnessFactoryInput,
+} from "../../harness/agent-harness.js";
 import type {
   HarnessAgentEvent,
   HarnessRunInput,
@@ -25,10 +28,11 @@ import type {
   HarnessRuntimeEvent,
   HarnessTurnOutcome,
 } from "../../harness/types.js";
+import { buildTurnPrompt } from "../../prompt-builder.js";
 import { AgentRunnerError } from "../../runner.js";
 import {
-  type CursorCliRunner,
   type CursorCliRunResult,
+  type CursorCliRunner,
   buildCursorCliArgs,
   runCursorCli,
 } from "./cursor-cli-session.js";
@@ -45,9 +49,9 @@ import {
 } from "./cursor-session-store.js";
 import {
   appendCursorTurnArtifactChunk,
+  extractThinkingFromCursorOutput,
   finalizeCursorTurnArtifact,
   formatCursorInvocation,
-  extractThinkingFromCursorOutput,
   redactCursorCliArgs,
   truncateForStructuredLog,
   writeCursorTurnArtifactHeader,
@@ -76,10 +80,9 @@ export class CursorAgentHarness implements AgentHarness {
     this.config = input.config;
     this.tracker = input.tracker;
     this.logger = input.logger ?? null;
-    this.hooks =
-      new WorkspaceHookRunner({
-        config: input.config.hooks,
-      });
+    this.hooks = new WorkspaceHookRunner({
+      config: input.config.hooks,
+    });
     this.workspaceManager =
       input.workspaceManager ??
       new WorkspaceManager({
@@ -160,7 +163,7 @@ export class CursorAgentHarness implements AgentHarness {
         liveSession,
       });
 
-      let storedSession =
+      const storedSession =
         this.config.harnesses.cursor.reusePolicy === "per_issue"
           ? await readCursorSession(workspacePath)
           : null;
@@ -184,6 +187,7 @@ export class CursorAgentHarness implements AgentHarness {
           attempt: input.attempt,
           turnNumber,
           chatId,
+          workspacePath,
         });
         const args = buildCursorCliArgs({
           workspace: workspacePath,
@@ -403,14 +407,16 @@ export class CursorAgentHarness implements AgentHarness {
     attempt: number | null;
     turnNumber: number;
     chatId: string | null;
+    workspacePath: string;
   }): Promise<string> {
-    if (input.turnNumber > 1 && input.chatId !== null) {
-      return [
-        "Continue the in-progress Cursor session for this issue.",
-        "Review the workspace changes, address remaining acceptance criteria,",
-        "and keep edits scoped to this issue.",
-      ].join(" ");
-    }
+    const workflowDispatch =
+      this.config.workflow === null
+        ? null
+        : await resolveWorkflowDispatchContext({
+            workspacePath: input.workspacePath,
+            issueIdentifier: input.issue.identifier,
+            workflow: this.config.workflow,
+          });
 
     return await buildTurnPrompt({
       workflow: {
@@ -420,6 +426,15 @@ export class CursorAgentHarness implements AgentHarness {
       attempt: input.attempt,
       turnNumber: input.turnNumber,
       maxTurns: this.config.agent.maxTurns,
+      workflowDispatch:
+        workflowDispatch === null
+          ? null
+          : {
+              changeRef: workflowDispatch.changeRef,
+              effectivePhaseId: workflowDispatch.effectivePhaseId,
+              handler: workflowDispatch.handler,
+              producesPath: workflowDispatch.producesPath,
+            },
     });
   }
 
@@ -581,7 +596,9 @@ export class CursorAgentHarness implements AgentHarness {
     }
 
     const message =
-      input.error instanceof Error ? input.error.message : "Cursor harness failed.";
+      input.error instanceof Error
+        ? input.error.message
+        : "Cursor harness failed.";
     const code =
       typeof input.error === "object" &&
       input.error !== null &&

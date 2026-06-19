@@ -10,7 +10,10 @@ import {
   DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
 } from "../../src/config/defaults.js";
 import type {
+  AgentHarnessKind,
   ResolvedWorkflowConfig,
+  SymphonyWorkflowConfig,
+  WorkflowAgentConfig,
   WorkflowCodexConfig,
   WorkflowHarnessesConfig,
 } from "../../src/config/types.js";
@@ -39,8 +42,12 @@ export const DEFAULT_TEST_CURSOR_CONFIG: WorkflowHarnessesConfig["cursor"] = {
 };
 
 export function withHarnessConfig(
-  config: Omit<ResolvedWorkflowConfig, "harnesses"> & {
+  config: Omit<ResolvedWorkflowConfig, "harnesses" | "agent" | "workflow"> & {
+    agent: Omit<WorkflowAgentConfig, "harness"> & {
+      harness?: AgentHarnessKind;
+    };
     harnesses?: Partial<WorkflowHarnessesConfig>;
+    workflow?: SymphonyWorkflowConfig | null;
   },
 ): ResolvedWorkflowConfig {
   const codex = config.codex;
@@ -58,5 +65,6 @@ export function withHarnessConfig(
       },
     },
     codex,
+    workflow: config.workflow ?? null,
   };
 }

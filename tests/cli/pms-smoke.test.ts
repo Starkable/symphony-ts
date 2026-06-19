@@ -110,8 +110,8 @@ describe("pms-smoke", () => {
     expect(errors).toEqual([]);
     expect(validateAuth).toHaveBeenCalledTimes(1);
     expect(fetchCandidateIssues).toHaveBeenCalledTimes(1);
-    expect(logs.some((message) => message.includes('"identifier": "BASELINEREQ-1"'))).toBe(
-      true,
-    );
+    expect(
+      logs.some((message) => message.includes('"identifier": "BASELINEREQ-1"')),
+    ).toBe(true);
   });
 });

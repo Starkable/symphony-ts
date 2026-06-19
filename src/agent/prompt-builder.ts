@@ -37,9 +37,17 @@ export interface RenderPromptInput {
   attempt: number | null;
 }
 
+export interface WorkflowDispatchInjection {
+  effectivePhaseId: string;
+  handler: string;
+  producesPath: string;
+  changeRef: string;
+}
+
 export interface BuildTurnPromptInput extends RenderPromptInput {
   turnNumber: number;
   maxTurns: number;
+  workflowDispatch?: WorkflowDispatchInjection | null;
 }
 
 export function getEffectivePromptTemplate(promptTemplate: string): string {
@@ -66,16 +74,53 @@ export async function renderPrompt(input: RenderPromptInput): Promise<string> {
 export async function buildTurnPrompt(
   input: BuildTurnPromptInput,
 ): Promise<string> {
-  if (input.turnNumber <= 1) {
-    return await renderPrompt(input);
+  const basePrompt =
+    input.turnNumber <= 1
+      ? await renderPrompt(input)
+      : buildContinuationPrompt({
+          issue: input.issue,
+          attempt: input.attempt,
+          turnNumber: input.turnNumber,
+          maxTurns: input.maxTurns,
+        });
+
+  if (input.workflowDispatch === null || input.workflowDispatch === undefined) {
+    return basePrompt;
   }
 
-  return buildContinuationPrompt({
-    issue: input.issue,
-    attempt: input.attempt,
-    turnNumber: input.turnNumber,
-    maxTurns: input.maxTurns,
-  });
+  return appendWorkflowDispatchSection(basePrompt, input.workflowDispatch);
+}
+
+export function appendWorkflowDispatchSection(
+  basePrompt: string,
+  dispatch: WorkflowDispatchInjection,
+): string {
+  if (dispatch.effectivePhaseId === "done") {
+    return [
+      basePrompt,
+      "",
+      "## Symphony Workflow (V1.2)",
+      `- change_ref: ${dispatch.changeRef}`,
+      "- effective_phase: done",
+      "- All workflow artifacts are complete.",
+    ].join("\n");
+  }
+
+  const handlerCommand = dispatch.handler.startsWith("/")
+    ? dispatch.handler
+    : `/${dispatch.handler}`;
+
+  return [
+    basePrompt,
+    "",
+    "## Symphony Workflow (V1.2)",
+    `- change_ref: ${dispatch.changeRef}`,
+    `- effective_phase: ${dispatch.effectivePhaseId}`,
+    `- handler: ${handlerCommand}`,
+    `- produces: ${dispatch.producesPath}`,
+    "",
+    `Run ${handlerCommand} for this phase and write the artifact to ${dispatch.producesPath}.`,
+  ].join("\n");
 }
 
 export function buildContinuationPrompt(input: {

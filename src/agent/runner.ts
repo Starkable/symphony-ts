@@ -19,6 +19,7 @@ import {
 } from "../domain/model.js";
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import type { IssueTracker } from "../tracker/tracker.js";
+import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../workspace/path-safety.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
@@ -230,6 +231,14 @@ export class AgentRunner {
           liveSession,
         });
         runAttempt.status = "building_prompt";
+        const workflowDispatch =
+          this.config.workflow === null
+            ? null
+            : await resolveWorkflowDispatchContext({
+                workspacePath,
+                issueIdentifier: issue.identifier,
+                workflow: this.config.workflow,
+              });
         const prompt = await buildTurnPrompt({
           workflow: {
             promptTemplate: this.config.promptTemplate,
@@ -238,6 +247,15 @@ export class AgentRunner {
           attempt: input.attempt,
           turnNumber,
           maxTurns: this.config.agent.maxTurns,
+          workflowDispatch:
+            workflowDispatch === null
+              ? null
+              : {
+                  changeRef: workflowDispatch.changeRef,
+                  effectivePhaseId: workflowDispatch.effectivePhaseId,
+                  handler: workflowDispatch.handler,
+                  producesPath: workflowDispatch.producesPath,
+                },
         });
         const title = `${issue.identifier}: ${issue.title}`;
 

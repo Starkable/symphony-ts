@@ -7,7 +7,10 @@ import {
   type AgentRunResult,
   type AgentRunnerOptions,
 } from "../../runner.js";
-import type { AgentHarness, AgentHarnessFactoryInput } from "../../harness/agent-harness.js";
+import type {
+  AgentHarness,
+  AgentHarnessFactoryInput,
+} from "../../harness/agent-harness.js";
 import type {
   HarnessAgentEvent,
   HarnessRunInput,
@@ -23,9 +26,7 @@ export class CodexAgentHarness implements AgentHarness {
 
   private workspaceManager: WorkspaceManager | undefined;
 
-  private readonly createRunner: (
-    options: AgentRunnerOptions,
-  ) => AgentRunner;
+  private readonly createRunner: (options: AgentRunnerOptions) => AgentRunner;
 
   private runner: AgentRunner;
 
@@ -40,7 +41,8 @@ export class CodexAgentHarness implements AgentHarness {
     this.tracker = input.tracker;
     this.workspaceManager = input.workspaceManager;
     this.onEvent = input.onEvent;
-    this.createRunner = input.createRunner ?? ((options) => new AgentRunner(options));
+    this.createRunner =
+      input.createRunner ?? ((options) => new AgentRunner(options));
     this.runner = this.createRunner(this.buildRunnerOptions());
   }
 

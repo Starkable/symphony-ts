@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_WORKFLOW_PROMPT,
+  appendWorkflowDispatchSection,
   buildContinuationPrompt,
   buildTurnPrompt,
   getEffectivePromptTemplate,
@@ -164,5 +165,40 @@ describe("prompt builder", () => {
       code: ERROR_CODES.templateParseError,
       kind: "template_parse_error",
     } satisfies Partial<PromptTemplateError>);
+  });
+
+  it("appends V1.2 workflow dispatch on continuation turns", async () => {
+    const prompt = await buildTurnPrompt({
+      workflow: {
+        promptTemplate: "Base prompt for {{ issue.identifier }}",
+      },
+      issue: ISSUE_FIXTURE,
+      attempt: 1,
+      turnNumber: 2,
+      maxTurns: 4,
+      workflowDispatch: {
+        changeRef: "abc-123",
+        effectivePhaseId: "plan",
+        handler: "openspec-continue-change",
+        producesPath: "openspec/changes/abc-123/tasks.md",
+      },
+    });
+
+    expect(prompt).toContain("Continue working on issue ABC-123");
+    expect(prompt).toContain("effective_phase: plan");
+    expect(prompt).toContain("/openspec-continue-change");
+    expect(prompt).toContain("openspec/changes/abc-123/tasks.md");
+  });
+
+  it("builds done-state workflow dispatch section", () => {
+    const prompt = appendWorkflowDispatchSection("Base", {
+      changeRef: "abc-123",
+      effectivePhaseId: "done",
+      handler: "",
+      producesPath: "",
+    });
+
+    expect(prompt).toContain("effective_phase: done");
+    expect(prompt).toContain("All workflow artifacts are complete");
   });
 });

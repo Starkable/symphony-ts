@@ -76,7 +76,9 @@ export function parsePmsSmokeArgs(argv: readonly string[]): PmsSmokeOptions {
     }
 
     if (workflowPath !== null) {
-      throw new Error("Accepts at most one positional WORKFLOW.md path argument.");
+      throw new Error(
+        "Accepts at most one positional WORKFLOW.md path argument.",
+      );
     }
 
     workflowPath = token;
@@ -127,7 +129,11 @@ function readRawOauthField(
   field: string,
 ): string | null {
   const tracker = workflow.config.tracker;
-  if (tracker === null || typeof tracker !== "object" || Array.isArray(tracker)) {
+  if (
+    tracker === null ||
+    typeof tracker !== "object" ||
+    Array.isArray(tracker)
+  ) {
     return null;
   }
 
@@ -273,7 +279,11 @@ export async function runPmsSmoke(
       io.error(
         `[pms-smoke] dispatch validation failed: [${validation.error.code}] ${validation.error.message}`,
       );
-      for (const hint of renderMissingPmsCredentialHints(workflow, config, env)) {
+      for (const hint of renderMissingPmsCredentialHints(
+        workflow,
+        config,
+        env,
+      )) {
         io.error(hint);
       }
       return 1;

@@ -1,7 +1,4 @@
-import type {
-  HarnessRuntimeEvent,
-  HarnessUsage,
-} from "../../harness/types.js";
+import type { HarnessRuntimeEvent, HarnessUsage } from "../../harness/types.js";
 import { createCursorHarnessEvent } from "./cursor-event-adapter.js";
 
 export interface CursorStreamParserState {
@@ -190,7 +187,9 @@ function handleToolCall(
     return;
   }
 
-  const [toolName, toolInput] = extractToolInfo(toolCall as Record<string, unknown>);
+  const [toolName, toolInput] = extractToolInfo(
+    toolCall as Record<string, unknown>,
+  );
   if (toolName === "") {
     return;
   }
@@ -248,7 +247,8 @@ function handleResult(
   const event = createCursorHarnessEvent({
     kind: isError ? "turn_failed" : "turn_completed",
     nativeKind: subtype ?? "result",
-    message: resultText.trim().length > 0 ? resultText.trim() : "cursor turn finished",
+    message:
+      resultText.trim().length > 0 ? resultText.trim() : "cursor turn finished",
     sessionId: state.sessionId,
     ...(usage === null ? {} : { usage }),
     ...(isError ? { errorCode: "cursor_result_error" } : {}),
@@ -277,7 +277,10 @@ function extractToolInfo(toolCall: Record<string, unknown>): [string, string] {
     if (!call || typeof call !== "object") {
       continue;
     }
-    return [toolType.name, extractToolInput(toolType.name, call as Record<string, unknown>)];
+    return [
+      toolType.name,
+      extractToolInput(toolType.name, call as Record<string, unknown>),
+    ];
   }
 
   const description = readString(toolCall.description);
@@ -288,7 +291,10 @@ function extractToolInfo(toolCall: Record<string, unknown>): [string, string] {
   return ["", ""];
 }
 
-function extractToolInput(toolName: string, call: Record<string, unknown>): string {
+function extractToolInput(
+  toolName: string,
+  call: Record<string, unknown>,
+): string {
   const args = call.args;
   if (!args || typeof args !== "object") {
     return readString(call.description) ?? "";

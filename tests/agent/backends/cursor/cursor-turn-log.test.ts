@@ -4,16 +4,8 @@ import { redactCursorCliArgs } from "../../../../src/agent/backends/cursor/curso
 
 describe("redactCursorCliArgs", () => {
   it("redacts prompt after -- separator", () => {
-    const args = [
-      "--print",
-      "--workspace",
-      "/tmp",
-      "--",
-      "secret prompt",
-    ];
-    expect(
-      redactCursorCliArgs(args, { includePrompt: false }),
-    ).toEqual([
+    const args = ["--print", "--workspace", "/tmp", "--", "secret prompt"];
+    expect(redactCursorCliArgs(args, { includePrompt: false })).toEqual([
       "--print",
       "--workspace",
       "/tmp",

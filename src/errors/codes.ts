@@ -44,6 +44,7 @@ export const ERROR_CODES = {
   snapshotUnavailable: "snapshot_unavailable",
   snapshotTimedOut: "snapshot_timed_out",
   issueNotFound: "issue_not_found",
+  artifactStoreDisabled: "artifact_store_disabled",
   cliStartupFailed: "cli_startup_failed",
 } as const;
 

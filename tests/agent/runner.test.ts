@@ -513,6 +513,11 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       refreshMs: 1_000,
       renderIntervalMs: 16,
     },
+    artifactStore: {
+      enabled: false,
+      root: null,
+      hydrateOnCreate: false,
+    },
   });
 }
 

@@ -4,9 +4,15 @@ import { join } from "node:path";
 import type { Writable } from "node:stream";
 
 import { mapAgentRunnerEventToHarnessAgentEvent } from "../agent/backends/codex/codex-event-adapter.js";
-import type { AgentHarness, AgentHarnessLike } from "../agent/harness/agent-harness.js";
+import type {
+  AgentHarness,
+  AgentHarnessLike,
+} from "../agent/harness/agent-harness.js";
 import { createAgentHarness } from "../agent/harness/harness-factory.js";
-import type { HarnessAgentEvent, HarnessRunResult } from "../agent/harness/types.js";
+import type {
+  HarnessAgentEvent,
+  HarnessRunResult,
+} from "../agent/harness/types.js";
 import type { AgentRunnerEvent } from "../agent/runner.js";
 import { validateDispatchConfig } from "../config/config-resolver.js";
 import type { ResolvedWorkflowConfig } from "../config/types.js";
@@ -17,6 +23,15 @@ import {
   type RuntimeSnapshot,
   buildRuntimeSnapshot,
 } from "../logging/runtime-snapshot.js";
+import { ArtifactStore, WorkflowExporter } from "../artifact-store/index.js";
+import type {
+  WorkflowDetail,
+  WorkflowSummary,
+} from "../artifact-store/types.js";
+import {
+  WorkflowService,
+  type WorkflowListStatus,
+} from "../observability/workflow-service.js";
 import {
   StructuredLogger,
   createJsonLineSink,
@@ -125,6 +140,10 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private readonly snapshotListeners = new Set<() => void>();
 
+  private readonly workflowService: WorkflowService | null;
+
+  private readonly workflowExporter: WorkflowExporter | null;
+
   // 构造函数：构造函数
   constructor(options: RuntimeHostOptions) {
     // 配置：配置
@@ -139,6 +158,14 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     this.workspaceManager =
       options.workspaceManager ??
       createWorkspaceManagerFromConfig(options.config, this.logger);
+    const artifactStore = new ArtifactStore(options.config.artifactStore);
+    if (artifactStore.isEnabled()) {
+      this.workflowService = new WorkflowService(artifactStore);
+      this.workflowExporter = new WorkflowExporter(artifactStore);
+    } else {
+      this.workflowService = null;
+      this.workflowExporter = null;
+    }
     // 事件处理：事件处理
     this.harnessEventSink = (event) => {
       void this.enqueue(async () => {
@@ -147,6 +174,9 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
           event,
         });
         await logHarnessEvent(this.logger, event);
+        if (event.kind === "turn_completed") {
+          await this.exportRunningIssueFromEvent(event);
+        }
       });
     };
     this.managesAgentHarness =
@@ -311,6 +341,127 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     };
   }
 
+  isWorkflowDashboardEnabled(): boolean {
+    return this.workflowService?.isEnabled() ?? false;
+  }
+
+  async listWorkflows(status: WorkflowListStatus): Promise<WorkflowSummary[]> {
+    if (this.workflowService === null) {
+      return [];
+    }
+
+    return this.workflowService.listWorkflows(
+      status,
+      this.orchestrator.getState(),
+    );
+  }
+
+  async getWorkflowDetail(
+    issueIdentifier: string,
+  ): Promise<WorkflowDetail | null> {
+    if (this.workflowService === null) {
+      return null;
+    }
+
+    return this.workflowService.getWorkflowDetail(
+      issueIdentifier,
+      this.orchestrator.getState(),
+    );
+  }
+
+  async readWorkflowArtifact(
+    issueIdentifier: string,
+    relativePath: string,
+  ): Promise<{ content: string; contentType: string } | null> {
+    if (this.workflowService === null) {
+      return null;
+    }
+
+    return this.workflowService.store.readArtifactFile({
+      issueIdentifier,
+      relativePath,
+    });
+  }
+
+  private async exportRunningIssueFromEvent(
+    event: HarnessAgentEvent,
+  ): Promise<void> {
+    if (this.workflowExporter === null) {
+      return;
+    }
+
+    const running = this.orchestrator.getState().running[event.issueId];
+    if (running === undefined) {
+      return;
+    }
+
+    await this.workflowExporter.exportIssue({
+      issue: running.issue,
+      workspacePath: event.workspacePath,
+      running,
+      workflow: this.config.workflow,
+      now: this.now(),
+    });
+  }
+
+  async exportTerminalIssue(issue: Issue): Promise<void> {
+    if (this.workflowExporter === null) {
+      return;
+    }
+
+    const workspacePath = this.workspaceManager.resolveForIssue(
+      issue.id,
+    ).workspacePath;
+    const running = this.orchestrator.getState().running[issue.id] ?? null;
+
+    await this.workflowExporter.exportIssue({
+      issue,
+      workspacePath,
+      running,
+      workflow: this.config.workflow,
+      now: this.now(),
+    });
+  }
+
+  private async exportIssueBeforeCleanup(issueId: string): Promise<void> {
+    if (this.workflowExporter === null) {
+      return;
+    }
+
+    const running = this.orchestrator.getState().running[issueId];
+    const workspacePath =
+      this.workspaceManager.resolveForIssue(issueId).workspacePath;
+
+    if (running !== undefined) {
+      await this.workflowExporter.exportIssue({
+        issue: running.issue,
+        workspacePath,
+        running,
+        workflow: this.config.workflow,
+        now: this.now(),
+      });
+      return;
+    }
+
+    const retry = this.orchestrator.getState().retryAttempts[issueId];
+    if (retry?.identifier === null || retry?.identifier === undefined) {
+      return;
+    }
+
+    await this.workflowExporter.exportIssue({
+      issue: {
+        id: issueId,
+        identifier: retry.identifier,
+        title: retry.identifier,
+        priority: null,
+      },
+      workspacePath,
+      running: null,
+      workflow: this.config.workflow,
+      now: this.now(),
+    });
+  }
+
   subscribeToSnapshots(listener: () => void): () => void {
     this.snapshotListeners.add(listener);
     return () => {
@@ -420,6 +571,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     );
 
     if (execution.stopRequest?.cleanupWorkspace === true) {
+      await this.exportIssueBeforeCleanup(execution.issueId);
       await this.workspaceManager.removeForIssue(execution.issueId);
     }
 
@@ -518,6 +670,13 @@ export async function startRuntimeService(
     terminalStates: currentConfig.tracker.terminalStates,
     workspaceManager,
     logger,
+    ...(runtimeHost.isWorkflowDashboardEnabled()
+      ? {
+          exportBeforeRemove: async (issue) => {
+            await runtimeHost.exportTerminalIssue(issue);
+          },
+        }
+      : {}),
   });
 
   // 启动仪表盘：启动仪表盘
@@ -589,8 +748,8 @@ export async function startRuntimeService(
   const workflowWatcher =
     // 如果工作流监视器为空，则创建工作流监视器
     options.workflowWatcher === undefined
-      // 创建工作流监视器：创建工作流监视器
-      ? await createRuntimeWorkflowWatcher({
+      ? // 创建工作流监视器：创建工作流监视器
+        await createRuntimeWorkflowWatcher({
           config: currentConfig,
           logger,
           onReload: async (nextConfig) => {
@@ -802,6 +961,7 @@ async function cleanupTerminalIssueWorkspaces(input: {
   terminalStates: string[];
   workspaceManager: WorkspaceManager;
   logger: StructuredLogger;
+  exportBeforeRemove?: (issue: Issue) => Promise<void>;
 }): Promise<void> {
   try {
     const issues = await input.tracker.fetchIssuesByStates(
@@ -809,6 +969,9 @@ async function cleanupTerminalIssueWorkspaces(input: {
     );
     await Promise.all(
       issues.map(async (issue) => {
+        if (input.exportBeforeRemove !== undefined) {
+          await input.exportBeforeRemove(issue);
+        }
         await input.workspaceManager.removeForIssue(issue.id);
       }),
     );
@@ -962,7 +1125,9 @@ async function logHarnessEvent(
   await logger.log(level, event.kind, event.message ?? event.kind, {
     ...(outcome === undefined ? {} : { outcome }),
     harness: event.harness,
-    ...(event.nativeKind === undefined ? {} : { native_kind: event.nativeKind }),
+    ...(event.nativeKind === undefined
+      ? {}
+      : { native_kind: event.nativeKind }),
     ...(event.errorCode === undefined ? {} : { error_code: event.errorCode }),
     ...(rawExitCode === undefined ? {} : { exit_code: rawExitCode }),
     issue_id: event.issueId,

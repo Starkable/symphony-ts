@@ -184,7 +184,8 @@ export function summarizeHarnessEvent(event: HarnessRuntimeEvent): string {
     return `unsupported tool call: ${event.toolName.trim()}`;
   }
 
-  const fallback = SESSION_EVENT_MESSAGES[event.kind as CodexClientEvent["event"]];
+  const fallback =
+    SESSION_EVENT_MESSAGES[event.kind as CodexClientEvent["event"]];
   return fallback ?? event.kind;
 }
 

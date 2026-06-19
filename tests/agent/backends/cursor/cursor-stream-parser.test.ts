@@ -60,11 +60,7 @@ describe("createCursorStreamParser", () => {
     parser.handleLine(HELLO_RESULT);
 
     expect(sessionId).toBe("805f4f21-af74-4491-84db-e085e446041d");
-    expect(events).toEqual([
-      "notification",
-      "other_message",
-      "turn_completed",
-    ]);
+    expect(events).toEqual(["notification", "other_message", "turn_completed"]);
     expect(parser.getState().usage).toEqual({
       inputTokens: 10,
       outputTokens: 2,

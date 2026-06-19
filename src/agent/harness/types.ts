@@ -1,4 +1,9 @@
-import type { Issue, LiveSession, RunAttempt, Workspace } from "../../domain/model.js";
+import type {
+  Issue,
+  LiveSession,
+  RunAttempt,
+  Workspace,
+} from "../../domain/model.js";
 
 export type HarnessKind = "codex" | "cursor";
 
