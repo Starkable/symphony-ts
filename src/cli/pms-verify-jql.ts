@@ -9,6 +9,15 @@ import { resolveWorkflowConfig } from "../config/config-resolver.js";
 import { loadWorkflowDefinition } from "../config/workflow-loader.js";
 import { buildCandidateIssuesJql } from "../tracker/pms/pms-jql.js";
 import { PmsTrackerClient } from "../tracker/pms/pms-client.js";
+import {
+  buildBcsVerifyCases,
+  getAuthenticatedFetch,
+  normalizeRestBaseUrl,
+  resolvePmsVerifyEnv,
+  runBcsJqlVerifyCase,
+  writePmsBcsVerifyReport,
+  type PmsBcsJqlCaseResult,
+} from "./pms-bcs-verify.js";
 
 interface VerifyCase {
   name: string;
@@ -16,11 +25,18 @@ interface VerifyCase {
   fields: string[] | string;
 }
 
-async function runSearch(
+interface LegacyVerifyResult extends VerifyCase {
+  ok: boolean;
+  status: number;
+  total: number;
+  errorBody: string;
+}
+
+async function runLegacySearch(
   client: PmsTrackerClient,
   restBaseUrl: string,
   testCase: VerifyCase,
-): Promise<{ ok: boolean; status: number; total: number; errorBody: string }> {
+): Promise<LegacyVerifyResult> {
   const url = `${restBaseUrl}/search`;
   const body: Record<string, unknown> = {
     jql: testCase.jql,
@@ -29,19 +45,11 @@ async function runSearch(
     fields: testCase.fields,
   };
 
-  const response = await (
-    client as unknown as {
-      authenticatedFetch: (
-        method: string,
-        targetUrl: string,
-        jsonBody?: Record<string, unknown>,
-      ) => Promise<Response>;
-    }
-  ).authenticatedFetch("POST", url, body);
-
+  const response = await getAuthenticatedFetch(client)("POST", url, body);
   const text = await response.text();
   if (!response.ok) {
     return {
+      ...testCase,
       ok: false,
       status: response.status,
       total: 0,
@@ -57,7 +65,13 @@ async function runSearch(
     total = 0;
   }
 
-  return { ok: true, status: response.status, total, errorBody: "" };
+  return {
+    ...testCase,
+    ok: true,
+    status: response.status,
+    total,
+    errorBody: "",
+  };
 }
 
 export async function runPmsJqlVerify(
@@ -67,15 +81,17 @@ export async function runPmsJqlVerify(
   const workflow = await loadWorkflowDefinition(workflowPath);
   const config = resolveWorkflowConfig(workflow, process.env);
   const client = PmsTrackerClient.fromConfig(config);
-  const restBaseUrl = config.tracker.endpoint.replace(/\/$/, "");
-  const normalizedRestBase = restBaseUrl.endsWith("/rest/api/2")
-    ? restBaseUrl
-    : `${restBaseUrl}/rest/api/2`;
+  const normalizedRestBase = normalizeRestBaseUrl(config.tracker.endpoint);
+  const fetchFn = getAuthenticatedFetch(client);
 
   await client.validateAuth();
   console.log("[verify] OAuth OK");
 
-  const project = config.tracker.projectSlug?.trim() || "BASELINEREQ";
+  const verifyEnv = resolvePmsVerifyEnv(
+    process.env,
+    config.tracker.projectSlug,
+  );
+  const project = config.tracker.projectSlug?.trim() || verifyEnv.project;
   const activeStates = config.tracker.activeStates;
 
   const cases: VerifyCase[] = [
@@ -95,7 +111,7 @@ export async function runPmsJqlVerify(
     {
       name: "symphony-candidate-jql-string-fields",
       jql: buildCandidateIssuesJql(project, activeStates),
-      fields: "summary,status",
+      fields: ["summary", "status"],
     },
     {
       name: "status-category-open",
@@ -124,20 +140,13 @@ export async function runPmsJqlVerify(
     },
   ];
 
-  const results: Array<
-    VerifyCase & {
-      ok: boolean;
-      status: number;
-      total: number;
-      errorBody: string;
-    }
-  > = [];
+  const results: LegacyVerifyResult[] = [];
   let passCount = 0;
 
   for (const testCase of cases) {
     try {
-      const result = await runSearch(client, normalizedRestBase, testCase);
-      results.push({ ...testCase, ...result });
+      const result = await runLegacySearch(client, normalizedRestBase, testCase);
+      results.push(result);
       if (result.ok) {
         passCount += 1;
       }
@@ -161,13 +170,72 @@ export async function runPmsJqlVerify(
     }
   }
 
+  const bcsCases = buildBcsVerifyCases(verifyEnv.project, verifyEnv.assignee);
+  const bcsResults: PmsBcsJqlCaseResult[] = [];
+  let bcsPassCount = 0;
+
+  console.log(
+    `[verify] BCS matrix project=${verifyEnv.project} assignee=${verifyEnv.assignee}`,
+  );
+
+  for (const testCase of bcsCases) {
+    const result = await runBcsJqlVerifyCase(
+      fetchFn,
+      normalizedRestBase,
+      testCase,
+    );
+    bcsResults.push(result);
+    if (result.jqlValid) {
+      bcsPassCount += 1;
+    }
+    console.log(
+      `[verify] ${testCase.name}: ${result.jqlValid ? "JQL_OK" : "JQL_FAIL"} status=${result.status} total=${result.total} hasMatchingIssues=${result.hasMatchingIssues}${result.returnedStatusName ? ` returnedStatus=${result.returnedStatusName}` : ""}`,
+    );
+    if (!result.jqlValid) {
+      console.log(`         jql=${testCase.jql}`);
+      console.log(`         body=${result.errorBody}`);
+    }
+  }
+
   mkdirSync(resolve(process.cwd(), "tmp"), { recursive: true });
   const reportPath = resolve(process.cwd(), "tmp/pms-jql-verify-report.json");
   writeFileSync(reportPath, `${JSON.stringify(results, null, 2)}\n`, "utf8");
-  console.log(`[verify] ${passCount}/${cases.length} cases passed`);
-  console.log(`[verify] report: ${reportPath}`);
+  console.log(`[verify] ${passCount}/${cases.length} legacy cases passed`);
+  console.log(`[verify] ${bcsPassCount}/${bcsCases.length} BCS JQL cases valid`);
+  console.log(`[verify] legacy report: ${reportPath}`);
 
-  return passCount > 0 ? 0 : 1;
+  const bcsReportPath = writePmsBcsVerifyReport({
+    generatedAt: new Date().toISOString(),
+    project: verifyEnv.project,
+    assignee: verifyEnv.assignee,
+    probeIssueKey: verifyEnv.probeIssueKey,
+    jqlCases: bcsResults,
+    projectStatuses: [],
+    transitions: [],
+    transitionsSkipped: true,
+    comments: {
+      ok: false,
+      skipped: true,
+      status: 0,
+      count: 0,
+      sample: null,
+      errorBody: "",
+    },
+    writeProbe: {
+      skipped: true,
+      commentOk: null,
+      commentStatus: null,
+      commentErrorBody: "",
+      transitionOk: null,
+      transitionStatus: null,
+      transitionErrorBody: "",
+      transitionId: null,
+      transitionName: null,
+    },
+  });
+  console.log(`[verify] BCS report: ${bcsReportPath}`);
+
+  return passCount > 0 || bcsPassCount > 0 ? 0 : 1;
 }
 
 function shouldRunAsCli(

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
+import type {
+  ResolvedWorkflowConfig,
+  SymphonyWorkflowConfig,
+} from "../../src/config/types.js";
 import type { Issue } from "../../src/domain/model.js";
 import {
   OrchestratorCore,
@@ -196,6 +199,38 @@ describe("orchestrator core", () => {
       dueAtMs: Date.parse("2026-03-06T00:00:06.000Z"),
     });
     expect(timers.scheduled[0]?.delayMs).toBe(1_000);
+  });
+
+  it("does not schedule continuation when V1.2 workflow is complete", async () => {
+    const timers = createFakeTimerScheduler();
+    const orchestrator = createOrchestrator({
+      timerScheduler: timers,
+      config: createConfig({
+        workflow: {
+          version: "1.2",
+          changeRefStrategy: null,
+          phases: [
+            {
+              id: "clarify",
+              handler: "openspec-new-change",
+              produces: "openspec/changes/{change_ref}/proposal.md",
+              requiresPass: false,
+            },
+          ],
+        },
+      }),
+    });
+
+    await orchestrator.pollTick();
+    const retryEntry = orchestrator.onWorkerExit({
+      issueId: "1",
+      outcome: "normal",
+      workflowComplete: true,
+      endedAt: new Date("2026-03-06T00:00:05.000Z"),
+    });
+
+    expect(retryEntry).toBeNull();
+    expect(timers.scheduled).toHaveLength(0);
   });
 
   it("schedules exponential backoff retries for abnormal exits and caps the delay", async () => {
@@ -545,6 +580,7 @@ function createTracker(input?: {
 function createConfig(overrides?: {
   agent?: Partial<ResolvedWorkflowConfig["agent"]>;
   codex?: Partial<ResolvedWorkflowConfig["codex"]>;
+  workflow?: SymphonyWorkflowConfig | null;
 }): ResolvedWorkflowConfig {
   const codex = {
     ...DEFAULT_TEST_CODEX_CONFIG,
@@ -563,6 +599,8 @@ function createConfig(overrides?: {
       terminalStates: ["Done", "Canceled"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
     },
     polling: {
@@ -599,6 +637,9 @@ function createConfig(overrides?: {
       root: null,
       hydrateOnCreate: false,
     },
+    ...(overrides?.workflow === undefined
+      ? {}
+      : { workflow: overrides.workflow }),
   });
 }
 

@@ -1,14 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRunnerEvent } from "../../src/agent/runner.js";
 import type { AgentHarness } from "../../src/agent/harness/agent-harness.js";
 import type {
   HarnessRunInput,
   HarnessRunResult,
 } from "../../src/agent/harness/types.js";
+import type { AgentRunnerEvent } from "../../src/agent/runner.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
 import type { Issue } from "../../src/domain/model.js";
 import {
@@ -294,6 +294,68 @@ describe("OrchestratorRuntimeHost", () => {
     ).toBe(true);
   });
 
+  it("skips artifact export for terminal issue without local workspace", async () => {
+    const storeRoot = await mkdtemp(join(tmpdir(), "symphony-rt-skip-store-"));
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "symphony-rt-skip-ws-"));
+    const host = new OrchestratorRuntimeHost({
+      config: createConfig({
+        workspace: { root: workspaceRoot },
+        artifactStore: {
+          enabled: true,
+          root: storeRoot,
+          hydrateOnCreate: false,
+        },
+      }),
+      tracker: createTracker(),
+      workspaceManager: new WorkspaceManager({ root: workspaceRoot }),
+    });
+
+    const result = await host.exportTerminalIssue(
+      createIssue({ id: "420", identifier: "BCS-420", state: "Done" }),
+    );
+
+    expect(result).toEqual({ exported: false, reason: "no_workspace" });
+    await expect(
+      readFile(join(storeRoot, "BCS-420", "manifest.json"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("exports terminal issue when workspace contains symphony artifacts", async () => {
+    const storeRoot = await mkdtemp(
+      join(tmpdir(), "symphony-rt-export-store-"),
+    );
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "symphony-rt-export-ws-"),
+    );
+    const workspacePath = join(workspaceRoot, "420");
+    const changeDir = join(workspacePath, "openspec", "changes", "bcs-420");
+    await mkdir(changeDir, { recursive: true });
+    await writeFile(join(changeDir, "proposal.md"), "# Proposal\n", "utf8");
+
+    const host = new OrchestratorRuntimeHost({
+      config: createConfig({
+        workspace: { root: workspaceRoot },
+        artifactStore: {
+          enabled: true,
+          root: storeRoot,
+          hydrateOnCreate: false,
+        },
+      }),
+      tracker: createTracker(),
+      workspaceManager: new WorkspaceManager({ root: workspaceRoot }),
+    });
+
+    const result = await host.exportTerminalIssue(
+      createIssue({ id: "420", identifier: "BCS-420", state: "Done" }),
+    );
+
+    expect(result).toEqual({ exported: true });
+    const meta = JSON.parse(
+      await readFile(join(storeRoot, "BCS-420", "meta.json"), "utf8"),
+    );
+    expect(meta.archived_reason).toBe("pms_terminal_cleanup");
+  });
+
   it("emits issue and session context for agent lifecycle logs", async () => {
     const tracker = createTracker();
     const fakeRunner = new FakeAgentRunner();
@@ -459,6 +521,8 @@ function createConfig(
       terminalStates: ["Done", "Canceled"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
       ...overrides.tracker,
     },

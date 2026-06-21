@@ -50,4 +50,14 @@ describe("pms-jql", () => {
   it("returns empty-id guard JQL when no numeric ids remain", () => {
     expect(buildIssueStatesByIdsJql(["", "abc"])).toBe("id in (0)");
   });
+
+  it("builds assignee filter with updated ASC ordering", () => {
+    expect(
+      buildCandidateIssuesJql("BCS", ["In Progress"], {
+        assignees: ["shenxianghong_wb"],
+      }),
+    ).toBe(
+      'project = "BCS" AND assignee in ("shenxianghong_wb") AND status in ("In Progress") ORDER BY updated ASC',
+    );
+  });
 });

@@ -7,6 +7,11 @@ import type { RunningEntry } from "../domain/model.js";
 import { resolveChangeRef } from "../workflow/change-ref-path.js";
 import { deriveEffectivePhase } from "../workflow/derive-effective-phase.js";
 import { toChangeRef } from "./change-ref.js";
+import {
+  type ExportIfExportableResult,
+  hasExportableContent,
+  workspaceDirectoryExists,
+} from "./exportable-content.js";
 import { buildWorkflowManifest } from "./manifest-builder.js";
 import {
   scanOpenspecChangeArtifacts,
@@ -14,10 +19,19 @@ import {
   scanSymphonyLogs,
 } from "./openspec-scan.js";
 import type { ArtifactStore } from "./store.js";
-import type { WorkflowMeta, WorkflowRuntimeSummary } from "./types.js";
+import type {
+  WorkflowArchivedReason,
+  WorkflowMeta,
+  WorkflowRuntimeSummary,
+} from "./types.js";
 import { parseWorkpad } from "./workpad-parser.js";
 
 const WORKPAD_RELATIVE = ".symphony/workpad.md";
+
+export type {
+  ExportIfExportableResult,
+  ExportSkipReason,
+} from "./exportable-content.js";
 
 export class WorkflowExporter {
   readonly #store: ArtifactStore;
@@ -37,6 +51,7 @@ export class WorkflowExporter {
     mode?: string;
     workflow?: SymphonyWorkflowConfig | null;
     now?: Date;
+    setArchivedReason?: WorkflowArchivedReason;
   }): Promise<void> {
     if (!this.isEnabled()) {
       return;
@@ -116,6 +131,8 @@ export class WorkflowExporter {
       now,
     });
 
+    const existingMeta = await this.#store.readMeta(input.issue.identifier);
+
     const meta: WorkflowMeta = {
       issue_identifier: input.issue.identifier,
       issue_id: input.issue.id,
@@ -127,9 +144,9 @@ export class WorkflowExporter {
         manifest.current_phase === "done" || manifest.current_phase === "failed"
           ? manifest.current_phase
           : null,
-      created_at:
-        (await this.#store.readMeta(input.issue.identifier))?.created_at ??
-        now.toISOString(),
+      archived_reason:
+        input.setArchivedReason ?? existingMeta?.archived_reason ?? null,
+      created_at: existingMeta?.created_at ?? now.toISOString(),
       updated_at: now.toISOString(),
     };
 
@@ -144,6 +161,33 @@ export class WorkflowExporter {
       workpadContent ?? "",
       "utf8",
     ).catch(() => undefined);
+  }
+
+  async exportIssueIfExportable(input: {
+    issue: Pick<Issue, "id" | "identifier" | "title" | "priority">;
+    workspacePath: string;
+    running?: RunningEntry | null;
+    mode?: string;
+    workflow?: SymphonyWorkflowConfig | null;
+    now?: Date;
+    setArchivedReason?: WorkflowArchivedReason;
+  }): Promise<ExportIfExportableResult> {
+    if (!this.isEnabled()) {
+      return { exported: false, reason: "disabled" };
+    }
+
+    if (!(await workspaceDirectoryExists(input.workspacePath))) {
+      return { exported: false, reason: "no_workspace" };
+    }
+
+    if (
+      !(await hasExportableContent(input.workspacePath, input.issue.identifier))
+    ) {
+      return { exported: false, reason: "empty_workspace" };
+    }
+
+    await this.exportIssue(input);
+    return { exported: true };
   }
 
   async #copyLogs(

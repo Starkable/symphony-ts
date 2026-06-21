@@ -1,17 +1,25 @@
 [
   {
     "name": "project-only-array-fields",
-    "jql": "project = \"CS\" ORDER BY updated DESC",
-    "fields": ["summary", "status", "issuetype"],
+    "jql": "project = \"BCS\" ORDER BY updated DESC",
+    "fields": [
+      "summary",
+      "status",
+      "issuetype"
+    ],
     "ok": true,
     "status": 200,
-    "total": 8021,
+    "total": 493,
     "errorBody": ""
   },
   {
     "name": "symphony-config-jql",
-    "jql": "project = \"CS\" AND issuetype in (\"产品需求\") AND status not in (\"草稿\", \"审核中\") AND status in (\"Open\", \"In Progress\") ORDER BY created ASC",
-    "fields": ["summary", "status", "issuetype"],
+    "jql": "project = \"BCS\" AND issuetype in (\"产品需求\") AND status in (\"In Progress\") ORDER BY created ASC",
+    "fields": [
+      "summary",
+      "status",
+      "issuetype"
+    ],
     "ok": true,
     "status": 200,
     "total": 5,
@@ -19,35 +27,47 @@
   },
   {
     "name": "symphony-candidate-jql-string-fields",
-    "jql": "project = \"CS\" AND status in (\"Open\", \"In Progress\") ORDER BY created ASC",
-    "fields": "summary,status",
-    "ok": false,
-    "status": 400,
-    "total": 0,
-    "errorBody": "{\"errorMessages\":[\"Can not deserialize instance of java.util.ArrayList out of VALUE_STRING token\\n at [Source: org.apache.catalina.connector.CoyoteInputStream@374ad046; line: 1, column: 116] (through reference chain: com.atlassian.jira.rest.v2.search.SearchRequestBean[\\\"fields\\\"])\"]}"
+    "jql": "project = \"BCS\" AND status in (\"In Progress\") ORDER BY created ASC",
+    "fields": [
+      "summary",
+      "status"
+    ],
+    "ok": true,
+    "status": 200,
+    "total": 25,
+    "errorBody": ""
   },
   {
     "name": "status-category-open",
-    "jql": "project = \"CS\" AND statusCategory != Done ORDER BY updated DESC",
-    "fields": ["summary", "status"],
+    "jql": "project = \"BCS\" AND statusCategory != Done ORDER BY updated DESC",
+    "fields": [
+      "summary",
+      "status"
+    ],
     "ok": true,
     "status": 200,
-    "total": 697,
+    "total": 92,
     "errorBody": ""
   },
   {
     "name": "skill-product-req-default",
-    "jql": "project = \"CS\" AND issuetype in (\"产品需求\") AND statusCategory != Done AND status not in (\"草稿\", \"审核中\") ORDER BY updated DESC",
-    "fields": ["summary", "status"],
+    "jql": "project = \"BCS\" AND issuetype in (\"产品需求\") AND statusCategory != Done AND status not in (\"草稿\", \"审核中\") ORDER BY updated DESC",
+    "fields": [
+      "summary",
+      "status"
+    ],
     "ok": true,
     "status": 200,
-    "total": 9,
+    "total": 11,
     "errorBody": ""
   },
   {
     "name": "baselinereq-planned",
     "jql": "project = \"BASELINEREQ\" AND status in (\"已计划\") ORDER BY updated DESC",
-    "fields": ["summary", "status"],
+    "fields": [
+      "summary",
+      "status"
+    ],
     "ok": false,
     "status": 400,
     "total": 0,
@@ -55,17 +75,24 @@
   },
   {
     "name": "cs-open-in-progress",
-    "jql": "project = \"CS\" AND status in (\"Open\", \"In Progress\") ORDER BY updated DESC",
-    "fields": ["summary", "status", "issuetype"],
+    "jql": "project = \"BCS\" AND status in (\"Open\", \"In Progress\") ORDER BY updated DESC",
+    "fields": [
+      "summary",
+      "status",
+      "issuetype"
+    ],
     "ok": true,
     "status": 200,
-    "total": 417,
+    "total": 31,
     "errorBody": ""
   },
   {
     "name": "dev-todo-states",
-    "jql": "project = \"CS\" AND status in (\"待开发\", \"开发中\") ORDER BY updated DESC",
-    "fields": ["summary", "status"],
+    "jql": "project = \"BCS\" AND status in (\"待开发\", \"开发中\") ORDER BY updated DESC",
+    "fields": [
+      "summary",
+      "status"
+    ],
     "ok": false,
     "status": 400,
     "total": 0,

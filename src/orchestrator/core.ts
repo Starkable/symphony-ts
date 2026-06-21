@@ -21,6 +21,7 @@ import {
   codexClientEventToHarnessRuntimeEvent,
 } from "../logging/session-metrics.js";
 import type { IssueStateSnapshot, IssueTracker } from "../tracker/tracker.js";
+import { trackerStateMatches } from "../tracker/state-matching.js";
 
 const CONTINUATION_RETRY_DELAY_MS = 1_000;
 const FAILURE_RETRY_BASE_DELAY_MS = 10_000;
@@ -127,6 +128,31 @@ export class OrchestratorCore {
     this.tracker = tracker;
   }
 
+  private isActiveTrackerState(state: string): boolean {
+    return trackerStateMatches(
+      state,
+      this.config.tracker.activeStates,
+      this.config.tracker,
+    );
+  }
+
+  private isTerminalTrackerState(state: string): boolean {
+    return trackerStateMatches(
+      state,
+      this.config.tracker.terminalStates,
+      this.config.tracker,
+    );
+  }
+
+  private blockersAreTerminal(issue: Issue): boolean {
+    return issue.blockedBy.every((blocker) => {
+      if (blocker.state === null) {
+        return false;
+      }
+      return this.isTerminalTrackerState(blocker.state);
+    });
+  }
+
   isDispatchEligible(
     issue: Issue,
     options?: {
@@ -143,13 +169,9 @@ export class OrchestratorCore {
     }
 
     const normalizedState = normalizeIssueState(issue.state);
-    const activeStates = toNormalizedStateSet(this.config.tracker.activeStates);
-    const terminalStates = toNormalizedStateSet(
-      this.config.tracker.terminalStates,
-    );
     if (
-      !activeStates.has(normalizedState) ||
-      terminalStates.has(normalizedState) ||
+      !this.isActiveTrackerState(issue.state) ||
+      this.isTerminalTrackerState(issue.state) ||
       this.state.running[issue.id] !== undefined
     ) {
       return false;
@@ -174,11 +196,7 @@ export class OrchestratorCore {
       return true;
     }
 
-    return issue.blockedBy.every((blocker) => {
-      const blockerState =
-        blocker.state === null ? null : normalizeIssueState(blocker.state);
-      return blockerState !== null && terminalStates.has(blockerState);
-    });
+    return this.blockersAreTerminal(issue);
   }
 
   async pollTick(): Promise<PollTickResult> {
@@ -309,6 +327,7 @@ export class OrchestratorCore {
     outcome: WorkerExitOutcome;
     reason?: string;
     endedAt?: Date;
+    workflowComplete?: boolean;
   }): RetryEntry | null {
     const runningEntry = this.state.running[input.issueId];
     if (runningEntry === undefined) {
@@ -324,6 +343,11 @@ export class OrchestratorCore {
 
     if (input.outcome === "normal") {
       this.state.completed.add(input.issueId);
+      const v12WorkflowEnabled =
+        (this.config.workflow?.phases.length ?? 0) > 0;
+      if (input.workflowComplete === true && v12WorkflowEnabled) {
+        return null;
+      }
       return this.scheduleRetry(input.issueId, 1, {
         identifier: runningEntry.identifier,
         error: null,
@@ -399,13 +423,9 @@ export class OrchestratorCore {
     }
 
     const normalizedState = normalizeIssueState(issue.state);
-    const activeStates = toNormalizedStateSet(this.config.tracker.activeStates);
-    const terminalStates = toNormalizedStateSet(
-      this.config.tracker.terminalStates,
-    );
     if (
-      !activeStates.has(normalizedState) ||
-      terminalStates.has(normalizedState) ||
+      !this.isActiveTrackerState(issue.state) ||
+      this.isTerminalTrackerState(issue.state) ||
       this.state.running[issue.id] !== undefined
     ) {
       return false;
@@ -415,11 +435,7 @@ export class OrchestratorCore {
       return true;
     }
 
-    return issue.blockedBy.every((blocker) => {
-      const blockerState =
-        blocker.state === null ? null : normalizeIssueState(blocker.state);
-      return blockerState !== null && terminalStates.has(blockerState);
-    });
+    return this.blockersAreTerminal(issue);
   }
 
   private async dispatchIssue(
@@ -473,10 +489,6 @@ export class OrchestratorCore {
       };
     }
 
-    const activeStates = toNormalizedStateSet(this.config.tracker.activeStates);
-    const terminalStates = toNormalizedStateSet(
-      this.config.tracker.terminalStates,
-    );
     const refreshedIds = new Set(refreshed.map((snapshot) => snapshot.id));
 
     for (const snapshot of refreshed) {
@@ -485,15 +497,14 @@ export class OrchestratorCore {
         continue;
       }
 
-      const normalizedState = normalizeIssueState(snapshot.state);
-      if (terminalStates.has(normalizedState)) {
+      if (this.isTerminalTrackerState(snapshot.state)) {
         stopRequests.push(
           await this.requestStop(runningEntry, true, "terminal_state"),
         );
         continue;
       }
 
-      if (activeStates.has(normalizedState)) {
+      if (this.isActiveTrackerState(snapshot.state)) {
         runningEntry.issue = {
           ...runningEntry.issue,
           identifier: snapshot.identifier,

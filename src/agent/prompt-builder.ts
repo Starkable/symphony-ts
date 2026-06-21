@@ -1,6 +1,10 @@
 import { Liquid } from "liquidjs";
 
-import type { Issue, WorkflowDefinition } from "../domain/model.js";
+import type {
+  Issue,
+  TrackerComment,
+  WorkflowDefinition,
+} from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
 
 export const DEFAULT_WORKFLOW_PROMPT =
@@ -30,6 +34,8 @@ export class PromptTemplateError extends Error {
     this.kind = kind;
   }
 }
+
+export const DEFAULT_TRACKER_COMMENT_PROMPT_LIMIT = 10;
 
 export interface RenderPromptInput {
   workflow: Pick<WorkflowDefinition, "promptTemplate">;
@@ -62,10 +68,13 @@ export async function renderPrompt(input: RenderPromptInput): Promise<string> {
   try {
     const parsedTemplate = liquidEngine.parse(template);
 
-    return await liquidEngine.render(parsedTemplate, {
-      issue: toTemplateIssue(input.issue),
-      attempt: input.attempt,
-    });
+    return appendTrackerCommentsSection(
+      await liquidEngine.render(parsedTemplate, {
+        issue: toTemplateIssue(input.issue),
+        attempt: input.attempt,
+      }),
+      input.issue.trackerComments ?? [],
+    );
   } catch (error) {
     throw toPromptTemplateError(error);
   }
@@ -163,7 +172,33 @@ function toTemplateIssue(issue: Issue): Record<string, unknown> {
     })),
     created_at: issue.createdAt,
     updated_at: issue.updatedAt,
+    tracker_comments: (issue.trackerComments ?? []).map((comment) => ({
+      author: comment.author,
+      body: comment.body,
+      created_at: comment.createdAt,
+    })),
   };
+}
+
+export function appendTrackerCommentsSection(
+  basePrompt: string,
+  comments: readonly TrackerComment[],
+  limit = DEFAULT_TRACKER_COMMENT_PROMPT_LIMIT,
+): string {
+  if (comments.length === 0) {
+    return basePrompt;
+  }
+
+  const recent = comments.length <= limit ? comments : comments.slice(-limit);
+  const lines = recent.map((comment) => {
+    const author = comment.author ?? "unknown";
+    const createdAt = comment.createdAt ?? "";
+    const prefix =
+      createdAt === "" ? `- ${author}: ` : `- ${author} @ ${createdAt}: `;
+    return `${prefix}${comment.body}`;
+  });
+
+  return [basePrompt, "", "## PMS 备注", ...lines].join("\n");
 }
 
 function toPromptTemplateError(error: unknown): PromptTemplateError {

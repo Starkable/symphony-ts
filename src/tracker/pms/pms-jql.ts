@@ -10,6 +10,7 @@ function quoteJqlList(values: string[]): string {
 export interface PmsProjectJqlOptions {
   issueTypes?: readonly string[];
   excludeDraftStatus?: boolean;
+  assignees?: readonly string[];
 }
 
 function appendProjectScopeClauses(
@@ -27,6 +28,16 @@ function appendProjectScopeClauses(
   if (options.excludeDraftStatus) {
     parts.push('status not in ("草稿", "审核中")');
   }
+
+  const assignees = options.assignees ?? [];
+  if (assignees.length > 0) {
+    parts.push(`assignee in (${quoteJqlList([...assignees])})`);
+  }
+}
+
+function resolveCandidateOrderBy(options: PmsProjectJqlOptions): string {
+  const assignees = options.assignees ?? [];
+  return assignees.length > 0 ? "updated ASC" : "created ASC";
 }
 
 export function buildCandidateIssuesJql(
@@ -44,11 +55,12 @@ export function buildCandidateIssuesJql(
   }
 
   const jql = parts.join(" AND ");
+  const orderBy = resolveCandidateOrderBy(options);
   if (jql === "") {
-    return `project = ${quoteJqlString(projectKey)} ORDER BY created ASC`;
+    return `project = ${quoteJqlString(projectKey)} ORDER BY ${orderBy}`;
   }
 
-  return `${jql} ORDER BY created ASC`;
+  return `${jql} ORDER BY ${orderBy}`;
 }
 
 export function buildIssuesByStatesJql(

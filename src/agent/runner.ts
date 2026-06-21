@@ -19,7 +19,9 @@ import {
 } from "../domain/model.js";
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import type { IssueTracker } from "../tracker/tracker.js";
+import { trackerStateMatches } from "../tracker/state-matching.js";
 import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
+import { isWorkflowAllComplete } from "../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../workspace/path-safety.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
@@ -288,6 +290,19 @@ export class AgentRunner {
 
         runAttempt.status = "finishing";
         issue = await this.refreshIssueState(issue);
+
+        if (lastTurn.status === "completed") {
+          if (
+            await isWorkflowAllComplete({
+              workspacePath,
+              issueIdentifier: issue.identifier,
+              workflow: this.config.workflow,
+            })
+          ) {
+            break;
+          }
+        }
+
         if (!this.isIssueStillActive(issue)) {
           break;
         }
@@ -363,12 +378,11 @@ export class AgentRunner {
   }
 
   private isIssueStillActive(issue: Issue): boolean {
-    const activeStates = new Set(
-      this.config.tracker.activeStates.map((state) =>
-        normalizeIssueState(state),
-      ),
+    return trackerStateMatches(
+      issue.state,
+      this.config.tracker.activeStates,
+      this.config.tracker,
     );
-    return activeStates.has(normalizeIssueState(issue.state));
   }
 
   private toAgentRunnerError(input: {

@@ -51,6 +51,8 @@ export interface WorkflowRuntimeSummary {
   last_event_at: string | null;
 }
 
+export type WorkflowArchivedReason = "pms_terminal_cleanup";
+
 export interface WorkflowMeta {
   issue_identifier: string;
   issue_id: string | null;
@@ -59,6 +61,7 @@ export interface WorkflowMeta {
   title: string | null;
   priority: string | null;
   terminal_phase: V1TerminalPhase | null;
+  archived_reason?: WorkflowArchivedReason | null;
   created_at: string | null;
   updated_at: string;
 }
@@ -87,6 +90,7 @@ export interface WorkflowSummary {
   artifact_count: number;
   priority: string | null;
   terminal_phase: V1TerminalPhase | null;
+  archived_reason?: WorkflowArchivedReason | null;
 }
 
 export interface WorkflowDetail extends WorkflowMeta {

@@ -245,6 +245,8 @@ function createConfig(
       terminalStates: ["Done"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
     },
     polling: {

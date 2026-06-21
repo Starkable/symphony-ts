@@ -2,14 +2,13 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { WorkflowArtifactStoreConfig } from "../config/types.js";
-import { parseWorkpad } from "./workpad-parser.js";
-import { buildSyntheticArtifactContent } from "./phase-artifacts.js";
 import { toChangeRef } from "./change-ref.js";
 import {
   resolveArtifactFilePath,
   resolveArtifactStoreRoot,
   resolveIssueStorePath,
 } from "./path-safety.js";
+import { buildSyntheticArtifactContent } from "./phase-artifacts.js";
 import type {
   V1TerminalPhase,
   WorkflowDetail,
@@ -18,6 +17,7 @@ import type {
   WorkflowSummary,
 } from "./types.js";
 import { V1_BUSINESS_PHASES } from "./types.js";
+import { parseWorkpad } from "./workpad-parser.js";
 
 export class ArtifactStore {
   readonly root: string;
@@ -194,6 +194,7 @@ export function toSummary(
     priority: meta?.priority ?? null,
     terminal_phase:
       meta?.terminal_phase ?? terminalPhase(manifest.current_phase),
+    archived_reason: meta?.archived_reason ?? null,
   };
 }
 

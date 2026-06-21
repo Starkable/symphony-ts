@@ -13,6 +13,7 @@ import {
 import { applyHarnessEventToSession } from "../../../logging/session-metrics.js";
 import type { StructuredLogger } from "../../../logging/structured-logger.js";
 import type { IssueTracker } from "../../../tracker/tracker.js";
+import { trackerStateMatches } from "../../../tracker/state-matching.js";
 import { resolveWorkflowDispatchContext } from "../../../workflow/workflow-dispatch.js";
 import { WorkspaceHookRunner } from "../../../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../../../workspace/path-safety.js";
@@ -56,6 +57,8 @@ import {
   truncateForStructuredLog,
   writeCursorTurnArtifactHeader,
 } from "./cursor-turn-log.js";
+import { resolveChangeRef } from "../../../workflow/change-ref-path.js";
+import { isWorkflowAllComplete } from "../../../workflow/workflow-harness-stop.js";
 
 export class CursorAgentHarness implements AgentHarness {
   private config: ResolvedWorkflowConfig;
@@ -361,6 +364,28 @@ export class CursorAgentHarness implements AgentHarness {
 
         runAttempt.status = "finishing";
         issue = await this.refreshIssueState(issue);
+
+        if (harnessEvent.kind === "turn_completed") {
+          if (
+            await isWorkflowAllComplete({
+              workspacePath,
+              issueIdentifier: issue.identifier,
+              workflow: this.config.workflow,
+            })
+          ) {
+            await this.logger?.info(
+              "harness_stop_workflow_done",
+              "Stopping harness because V1.2 workflow artifacts are complete.",
+              {
+                issue_identifier: issue.identifier,
+                turn_number: turnNumber,
+                change_ref: resolveChangeRef(issue.identifier),
+              },
+            );
+            break;
+          }
+        }
+
         if (!this.isIssueStillActive(issue)) {
           break;
         }
@@ -562,12 +587,11 @@ export class CursorAgentHarness implements AgentHarness {
   }
 
   private isIssueStillActive(issue: Issue): boolean {
-    const activeStates = new Set(
-      this.config.tracker.activeStates.map((state) =>
-        normalizeIssueState(state),
-      ),
+    return trackerStateMatches(
+      issue.state,
+      this.config.tracker.activeStates,
+      this.config.tracker,
     );
-    return activeStates.has(normalizeIssueState(issue.state));
   }
 
   private toHarnessError(input: {

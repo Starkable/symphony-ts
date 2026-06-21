@@ -21,6 +21,7 @@ import type {
 import { createCursorHarnessEvent } from "../../../../src/agent/backends/cursor/cursor-event-adapter.js";
 import { StructuredLogger } from "../../../../src/logging/structured-logger.js";
 import type { StructuredLogEntry } from "../../../../src/logging/structured-logger.js";
+import * as workflowHarnessStop from "../../../../src/workflow/workflow-harness-stop.js";
 import {
   DEFAULT_TEST_CODEX_CONFIG,
   DEFAULT_TEST_CURSOR_CONFIG,
@@ -151,6 +152,62 @@ describe("CursorAgentHarness", () => {
     expect(finishLog).toBeDefined();
     expect(finishLog?.exit_code).toBe(0);
   });
+
+  it("stops after one turn when V1.2 workflow artifacts are complete", async () => {
+    const logEntries: StructuredLogEntry[] = [];
+    const logger = new StructuredLogger([
+      {
+        write(entry) {
+          logEntries.push(entry);
+        },
+      },
+    ]);
+
+    const runCli = vi
+      .fn<(input: CursorCliRunInput) => Promise<CursorCliRunResult>>()
+      .mockImplementation(async (input) => createMockCliResult(input));
+
+    const baseConfig = buildHarnessConfig({
+      turnLogWorkspaceArtifact: false,
+    });
+    const harness = new CursorAgentHarness({
+      config: {
+        ...baseConfig,
+        agent: {
+          ...baseConfig.agent,
+          maxTurns: 5,
+        },
+      },
+      tracker: buildTracker(),
+      workspaceManager: buildWorkspaceManager(),
+      logger,
+      runCli,
+      onEvent: () => {},
+    });
+
+    const completeSpy = vi
+      .spyOn(workflowHarnessStop, "isWorkflowAllComplete")
+      .mockResolvedValue(true);
+
+    try {
+      const result = await harness.run({
+        issue: createIssue(),
+        attempt: null,
+      });
+
+      expect(result.turnsCompleted).toBe(1);
+      expect(runCli).toHaveBeenCalledTimes(1);
+      expect(
+        logEntries.find((entry) => entry.event === "harness_stop_workflow_done"),
+      ).toMatchObject({
+        issue_identifier: "ISSUE-1",
+        turn_number: 1,
+        change_ref: "issue-1",
+      });
+    } finally {
+      completeSpy.mockRestore();
+    }
+  });
 });
 
 function buildHarnessConfig(
@@ -168,6 +225,8 @@ function buildHarnessConfig(
       terminalStates: ["Done"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
     },
     polling: { intervalMs: 30_000 },

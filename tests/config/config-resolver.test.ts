@@ -503,6 +503,50 @@ describe("config-resolver", () => {
     });
   });
 
+  it("resolves PMS assignee from workflow and env override", () => {
+    const fromWorkflow = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          tracker: {
+            kind: "pms",
+            project_slug: "BCS",
+            assignee: "alice_wb",
+            oauth: {
+              access_token: "t",
+              access_token_secret: "s",
+              rsa_private_key_path: "/key",
+            },
+          },
+        },
+      },
+      {},
+    );
+    expect(fromWorkflow.tracker.assignees).toEqual(["alice_wb"]);
+
+    const fromEnv = resolveWorkflowConfig(
+      {
+        workflowPath: "/repo/WORKFLOW.md",
+        promptTemplate: "Prompt",
+        config: {
+          tracker: {
+            kind: "pms",
+            project_slug: "BCS",
+            assignee: "alice_wb",
+            oauth: {
+              access_token: "t",
+              access_token_secret: "s",
+              rsa_private_key_path: "/key",
+            },
+          },
+        },
+      },
+      { PMS_TRACKER_ASSIGNEE: "bob_wb,charlie_wb" },
+    );
+    expect(fromEnv.tracker.assignees).toEqual(["bob_wb", "charlie_wb"]);
+  });
+
   it("blocks PMS dispatch when oauth credentials are missing", () => {
     const validation = validateDispatchConfig(
       resolveWorkflowConfig(

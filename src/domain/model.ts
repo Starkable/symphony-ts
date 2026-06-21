@@ -43,6 +43,12 @@ export interface BlockerRef {
   state: string | null;
 }
 
+export interface TrackerComment {
+  author: string | null;
+  body: string;
+  createdAt: string | null;
+}
+
 export interface Issue {
   id: string;
   identifier: string;
@@ -56,6 +62,8 @@ export interface Issue {
   blockedBy: BlockerRef[];
   createdAt: string | null;
   updatedAt: string | null;
+  /** PMS 备注；poll 时填充，其他 tracker 通常为空。 */
+  trackerComments?: TrackerComment[];
 }
 
 export interface WorkflowDefinition {

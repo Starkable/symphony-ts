@@ -38,9 +38,10 @@ Symphony Issue (identifier, title, state, …)
 |------------------------|-----------|----------------|
 | `project_slug` | **projectKey** | `project = "CS"` |
 | `active_states` | **status**（JQL 可用名） | `status in ("Open", "In Progress")` |
-| `terminal_states` | 终态 **status** | reconcile 时 `fetchIssuesByStates` |
+| `terminal_states` | 终态 **status** | **启动时** `fetchIssuesByStates`（terminal workspace cleanup） |
 | `issue_types` | **issuetype** 显示名 | `issuetype in ("产品需求")` |
 | `exclude_draft_status: true` | 工作流过滤 | `status not in ("草稿", "审核中")` |
+| `assignee` | **assignee** 登录名 | `assignee in ("user_wb")` |
 | `endpoint` | Server 根 URL | `{endpoint}/rest/api/2/search` |
 
 JQL 拼装实现：`src/tracker/pms/pms-jql.ts`。
@@ -51,6 +52,7 @@ JQL 拼装实现：`src/tracker/pms/pms-jql.ts`。
 |------|------|
 | `issue_types` | 非空时追加 `issuetype in (...)` |
 | `exclude_draft_status` | 为 `true` 时追加排除草稿/审核中；且当 `active_states` 为空时改用 `statusCategory != Done` |
+| `assignee` | 非空时追加 `assignee in (...)`；启用时 candidate JQL 追加 `ORDER BY updated ASC` |
 | `active_states` 为空 | 不生成 `status in (...)`，改由 `statusCategory != Done`（需配合 `exclude_draft_status` 等过滤） |
 
 ### OAuth 配置 ↔ 环境变量
@@ -61,6 +63,7 @@ JQL 拼装实现：`src/tracker/pms/pms-jql.ts`。
 | `oauth.access_token_secret` | `PMS_OAUTH_ACCESS_TOKEN_SECRET` |
 | `oauth.rsa_private_key_path` | `PMS_JIRA_KEY_PATH` |
 | `endpoint` | `PMS_JIRA_SERVER` |
+| `assignee` | `PMS_TRACKER_ASSIGNEE`（逗号分隔，覆盖 WORKFLOW） |
 
 ---
 
@@ -73,6 +76,7 @@ JQL 拼装实现：`src/tracker/pms/pms-jql.ts`。
 | **WORKFLOW `active_states` / JQL** | Jira 接受的 **status JQL 名** | `Open`, `In Progress` |
 | **PMS 页面 / `issue.state`** | 常为 **展示名** | `进行中` |
 | **HTTP 400** | JQL 里写了 UI 中文但 workflow 不认 | `'status' 字段中没有 '进行中'` |
+| **dispatch 不匹配** | poll 返回 `进行中` 但 `active_states` 为 `In Progress` | 内置 alias：`In Progress` ↔ `进行中`（`pms-status-alias.ts`） |
 
 **规则**：以 `pnpm pms:verify-jql` 实测 JQL 是否返回 200 为准，不要仅凭 PMS 界面中文反推 JQL。
 
@@ -112,8 +116,9 @@ summary, description, status, labels, priority, created, updated
 | `blockedBy` | — | 一期固定 `[]` |
 | `createdAt` | `fields.created` | 转 ISO8601 |
 | `updatedAt` | `fields.updated` | 转 ISO8601 |
+| `trackerComments` | `GET /issue/{key}/comment` | poll 后附加；prompt 注入「PMS 备注」节（默认最近 10 条） |
 
-状态刷新（reconcile）另用 `id,key,status`，映射为 `IssueStateSnapshot`（`id`, `identifier`, `state`）。
+状态刷新（reconcile）另用 `id,key,status`，映射为 `IssueStateSnapshot`（`id`, `identifier`, `state`）。dispatch / reconcile 比对 `issue.state` 时会应用 **status alias**（例如 `进行中` 匹配 WORKFLOW 中的 `In Progress`）。
 
 ### WORKFLOW prompt 可用变量
 
@@ -126,14 +131,33 @@ summary, description, status, labels, priority, created, updated
 
 ---
 
-## 5. 一期未映射的 PMS 字段
+## 5. Orchestrator 写回矩阵（BCS 等 PMS 项目）
+
+写回由 **orchestrator** 在 worker **正常结束**后触发，Agent **不**直接调用 PMS REST。信号来源：`.symphony/workpad.md`（V1.1 legacy）或 V1.2 产物扫描（`deriveEffectivePhase.allComplete`）。
+
+| 信号来源 | 条件 | PMS 动作 | 备注 |
+|----------|------|----------|------|
+| workpad `clarify_blocked` | `Phase: failed` 且 Notes 含 `CLARIFY_BLOCKED:` | transition → **开发暂停** | POST 评论（前缀 `[Symphony]`）；已处于开发暂停则跳过 transition |
+| workpad `done` | `Phase: done` | transition → **提测**（目标状态 **已提测**） | 不写评论；V1.1 legacy |
+| V1.2 产物 `done` | `workflow.phases` 已配置且六阶段产物均完成（含 archived 目录） | transition → **提测**（目标状态 **已提测**） | 不写评论；无需 workpad |
+| `none` | 其他 | 无 | — |
+
+- 写失败进入内存 **pending 队列**，下次 poll tick 重试；不阻塞 dispatch。
+- `terminal_states` 应包含 Symphony 负责到的终态（如 BCS：`已提测`）；`开发暂停` 非终态，靠移出 `In Progress` JQL 自然退出 poll。
+- 部分项目 transition 可能要求必填自定义字段（如「测试分级」）；失败时查 HTTP 400 body 并在 PMS 侧补权限/默认值。
+
+实现：`src/tracker/pms/pms-writeback.ts`、`src/workflow/writeback-signal.ts`、`src/workflow/workpad-writeback-signal.ts`。
+
+---
+
+## 6. 一期未映射的 PMS 字段
 
 以下在外部 **pms-opt-skill** 等工具中常见，Symphony **一期不读入 `Issue`**：
 
 | PMS / Jira 字段 | 说明 |
 |-----------------|------|
 | `issuetype` | 仅通过 WORKFLOW `issue_types` 参与 **JQL 过滤**，不进入 `Issue` |
-| `assignee` / `reporter` | 经办人、报告人 |
+| `assignee` / `reporter` | 经办人、报告人；`assignee` 可通过 WORKFLOW 参与 **JQL 过滤**，不进入 `Issue` 字段 |
 | 自定义字段 | 如期望版本 `cf[10102]`、开发工程师 `customfield_*` |
 | `issuelinks` | 阻塞 / 关联关系（`blockedBy` 未实现） |
 | `fixVersions` / 组件 | 版本、模块等 |
@@ -142,7 +166,7 @@ summary, description, status, labels, priority, created, updated
 
 ---
 
-## 6. 与 pms-opt-skill 的习惯对照
+## 7. 与 pms-opt-skill 的习惯对照
 
 Symphony 不运行时依赖 pms-opt-skill，但 JQL 习惯可对齐：
 
@@ -157,7 +181,7 @@ Symphony 不运行时依赖 pms-opt-skill，但 JQL 习惯可对齐：
 
 ---
 
-## 7. 如何自查字段是否配对
+## 8. 如何自查字段是否配对
 
 ```bash
 pnpm build
@@ -180,7 +204,7 @@ pnpm pms:smoke examples/workflow-pms/WORKFLOW.md --limit 5
 
 ---
 
-## 8. 读 smoke 输出示例
+## 9. 读 smoke 输出示例
 
 ```json
 {

@@ -161,4 +161,91 @@ describe("deriveEffectivePhase", () => {
 
     expect(result.currentPhase).toBe("done");
   });
+
+  it("returns done when all artifacts exist only in archived directory", async () => {
+    const workspacePath = await createWorkspace();
+    const archiveBase = "openspec/changes/archive/2026-06-21-bcs-496";
+
+    await writeRelative(
+      workspacePath,
+      `${archiveBase}/proposal.md`,
+      "# Proposal",
+    );
+    await writeRelative(
+      workspacePath,
+      `${archiveBase}/proposal_review.md`,
+      "---\nstatus: pass\n---\n# Review",
+    );
+    await writeRelative(
+      workspacePath,
+      `${archiveBase}/tasks.md`,
+      "# Tasks",
+    );
+
+    const result = await deriveEffectivePhase({
+      workspacePath,
+      changeRef: "bcs-496",
+      phases: DEFAULT_PHASES,
+    });
+
+    expect(result.currentPhase).toBe("done");
+    expect(result.allComplete).toBe(true);
+  });
+
+  it("prefers active change artifacts over archived copies", async () => {
+    const workspacePath = await createWorkspace();
+
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/proposal.md",
+      "# Active Proposal",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/archive/2026-06-19-bcs-423/proposal.md",
+      "# Archived Proposal",
+    );
+
+    const result = await deriveEffectivePhase({
+      workspacePath,
+      changeRef: "bcs-423",
+      phases: DEFAULT_PHASES,
+    });
+
+    expect(result.currentPhase).toBe("proposal_review");
+  });
+
+  it("uses the latest archived directory when multiple matches exist", async () => {
+    const workspacePath = await createWorkspace();
+
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/archive/2026-06-19-bcs-423/proposal.md",
+      "# Old",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/archive/2026-06-21-bcs-423/proposal.md",
+      "# New",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/archive/2026-06-21-bcs-423/proposal_review.md",
+      "---\nstatus: pass\n---\n# Review",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/archive/2026-06-21-bcs-423/tasks.md",
+      "# Tasks",
+    );
+
+    const result = await deriveEffectivePhase({
+      workspacePath,
+      changeRef: "bcs-423",
+      phases: DEFAULT_PHASES,
+    });
+
+    expect(result.currentPhase).toBe("done");
+    expect(result.allComplete).toBe(true);
+  });
 });

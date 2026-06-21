@@ -17,7 +17,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLI_ACKNOWLEDGEMENT_FLAG, runCli } from "../../src/cli/main.js";
 import { resolveWorkflowConfig } from "../../src/config/config-resolver.js";
 import type { ResolvedWorkflowConfig } from "../../src/config/types.js";
-import { withHarnessConfig } from "../helpers/workflow-config.js";
 import { loadWorkflowDefinition } from "../../src/config/workflow-loader.js";
 import type { Issue } from "../../src/domain/model.js";
 import type { PollTickResult } from "../../src/orchestrator/core.js";
@@ -30,6 +29,7 @@ import type {
   IssueStateSnapshot,
   IssueTracker,
 } from "../../src/tracker/tracker.js";
+import { withHarnessConfig } from "../helpers/workflow-config.js";
 
 const tempDirs: string[] = [];
 const codexFixturePath = join(
@@ -103,6 +103,47 @@ describe("runtime integration", () => {
       "Done",
       "Canceled",
     ]);
+  });
+
+  it("does not write artifact store entries for terminal issues without local workspace", async () => {
+    const root = await createTempDir("symphony-runtime-terminal-skip-export-");
+    const logsRoot = join(root, "logs");
+    const workspaceRoot = join(root, "workspaces");
+    const storeRoot = join(root, "artifacts");
+
+    const tracker = createTracker({
+      terminalIssues: [
+        createIssue({ id: "ghost-1", identifier: "BCS-420", state: "Done" }),
+      ],
+      candidates: [],
+    });
+    const stdout = new PassThrough();
+    const service = await startRuntimeService({
+      config: createConfig({
+        workspace: {
+          root: workspaceRoot,
+        },
+        artifactStore: {
+          enabled: true,
+          root: storeRoot,
+          hydrateOnCreate: false,
+        },
+        server: {
+          port: 0,
+        },
+      }),
+      logsRoot,
+      tracker,
+      stdout,
+    });
+
+    await expect(stat(join(storeRoot, "BCS-420"))).rejects.toThrow();
+    const logFile = await readFile(join(logsRoot, "symphony.jsonl"), "utf8");
+    expect(logFile).toContain('"event":"startup_terminal_skip_export"');
+    expect(logFile).toContain('"reason":"no_workspace"');
+
+    await service.shutdown();
+    expect(await service.waitForExit()).toBe(0);
   });
 
   it("returns a nonzero exit code when the real runtime host exits abnormally", async () => {
@@ -244,6 +285,8 @@ Prompt body
             terminalStates: ["Done"],
             issueTypes: [],
             excludeDraftStatus: false,
+            assignees: [],
+            stateAliases: {},
             oauth: null,
           },
         }),
@@ -577,6 +620,8 @@ function createConfig(
       terminalStates: ["Done", "Canceled"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
     },
     polling: {

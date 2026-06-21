@@ -1,10 +1,10 @@
-import type { OrchestratorState } from "../domain/model.js";
-import { ArtifactStore, toSummary } from "../artifact-store/store.js";
+import { type ArtifactStore, toSummary } from "../artifact-store/store.js";
 import type {
   WorkflowDetail,
   WorkflowManifest,
   WorkflowSummary,
 } from "../artifact-store/types.js";
+import type { OrchestratorState } from "../domain/model.js";
 
 export type WorkflowListStatus = "active" | "archived" | "all";
 
@@ -66,18 +66,28 @@ export class WorkflowService {
     }
 
     if (status === "active") {
-      return all.filter(
-        (entry) =>
-          runningIds.has(findIssueId(state, entry.issue_identifier) ?? "") ||
-          entry.terminal_phase === null,
-      );
+      return all.filter((entry) => {
+        const issueId = findIssueId(state, entry.issue_identifier) ?? "";
+        if (runningIds.has(issueId)) {
+          return true;
+        }
+        if (hasArchivedReason(entry.archived_reason)) {
+          return false;
+        }
+        return entry.terminal_phase === null;
+      });
     }
 
-    return all.filter(
-      (entry) =>
-        entry.terminal_phase !== null &&
-        !runningIds.has(findIssueId(state, entry.issue_identifier) ?? ""),
-    );
+    return all.filter((entry) => {
+      const issueId = findIssueId(state, entry.issue_identifier) ?? "";
+      if (runningIds.has(issueId)) {
+        return false;
+      }
+      return (
+        hasArchivedReason(entry.archived_reason) ||
+        entry.terminal_phase !== null
+      );
+    });
   }
 
   async getWorkflowDetail(
@@ -178,6 +188,12 @@ function emptyManifest(
       last_event_at: running.lastCodexTimestamp,
     },
   };
+}
+
+function hasArchivedReason(
+  archivedReason: WorkflowSummary["archived_reason"],
+): boolean {
+  return archivedReason !== null && archivedReason !== undefined;
 }
 
 function findIssueId(

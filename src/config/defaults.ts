@@ -16,6 +16,10 @@ export const DEFAULT_TERMINAL_STATES = [
   "Duplicate",
   "Done",
 ] as const;
+export const DEFAULT_TRACKER_ASSIGNEES: string[] = [];
+export const DEFAULT_TRACKER_STATE_ALIASES = Object.freeze({}) as Readonly<
+  Record<string, readonly string[]>
+>;
 
 export const DEFAULT_POLL_INTERVAL_MS = 30_000;
 export const DEFAULT_WORKSPACE_ROOT = join(tmpdir(), "symphony_workspaces");

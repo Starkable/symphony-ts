@@ -68,6 +68,8 @@ describe("workflow-phases-parser", () => {
         terminalStates: ["Done"],
         issueTypes: [],
         excludeDraftStatus: false,
+        assignees: [],
+        stateAliases: {},
         oauth: null,
       },
       polling: { intervalMs: 30_000 },

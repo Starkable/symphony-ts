@@ -21,7 +21,7 @@ server:
   port: 3000
 ```
 
-启用后 orchestrator 会在 worker turn 结束、terminal cleanup 前将 workspace 内容 export 到：
+启用后 orchestrator 会在 worker turn 结束、**worker 终态 cleanup** 前将 workspace 内容 export 到 store。**启动 terminal cleanup** 也会尝试 export，但**仅当本地 workspace 存在且含 Symphony 产物**（OpenSpec 阶段文件、turn log 或非空 workpad）时才写入；从未 dispatch 的 PMS 终态工单不会生成空壳 store 目录。
 
 ```
 <artifact_store.root>/<issue_identifier>/
@@ -45,6 +45,15 @@ server:
 | archive | `archive.md`（active 或 `archive/YYYY-MM-DD-{ref}/`） |
 
 `manifest.json` 的 `current_phase` 由 Symphony **扫描产物推导**，不读 workpad Phase。
+
+## Active / History 与 archived_reason
+
+| 列表 | 规则 |
+|------|------|
+| **Active** | orchestrator `running` 中；或 store 中 `archived_reason` 为空且 `terminal_phase` 为空 |
+| **History** | 非 running，且 `archived_reason` 非空（如 `pms_terminal_cleanup`）或 OpenSpec 终态 `done`/`failed` |
+
+PMS 终态 startup cleanup 成功 export 时，`meta.json` 会写入 `archived_reason: "pms_terminal_cleanup"`，工单进入 History 而非 Active。跳过 export 时记录日志 `startup_terminal_skip_export`（`no_workspace` / `empty_workspace`）。
 
 ## API
 

@@ -92,8 +92,10 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 
 ### 与 orchestrator 的边界
 
-- issue 在 `active_states` 时 worker 正常退出后约 1s continuation retry
+- issue 在 `active_states` 时 worker 正常退出后约 1s continuation retry（**V1.2 全部产物完成时除外**，不再 continuation，避免 archive 后误判 clarify）
 - V1.2 不依赖 workpad；Dashboard `current_phase` 由产物推导
+- **V1.2 六阶段全部完成后**，Cursor/Codex harness 在**当前 turn 成功结束**后停止后续 turn（structured log：`harness_stop_workflow_done`），worker 以 `outcome=normal` 退出
+- Worker 正常退出后 orchestrator 根据产物完成触发 PMS 写回（**已提测**）；时序为：`archive turn 完成` → `harness 停止` → `worker_exit_normal` → `pms_writeback`。与 `max_turns` 无关——done 时提前 break，未 done 时仍受 `max_turns` 上限约束
 - `artifact_store` 启用时 exporter 无 workpad 也不失败
 
 ### symphony-openspec-bundle 协调
@@ -358,7 +360,8 @@ clarify ⇄ blocked（等人回复 [CLARIFY]）
 
 - issue 仍在 `active_states` 时 worker 正常退出后 **约 1s continuation retry**
 - V1 `failed` / V2 `blocked`：零代码改动、正常结束 turn
-- 彻底停止 dispatch：将 issue 移出 `active_states` 或后续 execution 层门控（见 TODO）
+- **PMS 写回**：orchestrator 读 workpad，执行 transition/comment；Agent 只写 workpad，不直接调 PMS API
+- 彻底停止 dispatch：将 issue 移出 `active_states`（或进入非 alias 匹配的终态如 `已提测`）
 
 ## 参考文件
 
@@ -375,7 +378,7 @@ clarify ⇄ blocked（等人回复 [CLARIFY]）
 | **V2 blocked 等人** | 可选恢复 `[CLARIFY]` 人工唤醒 |
 | **openspec sync-specs** | archive 时默认同步 main spec（V1 关闭） |
 | orchestrator dispatch 门控 | 读 `.symphony/execution-state.json` |
-| 需求平台写回 | PMS/Linear 评论与状态同步 |
+| 需求平台写回（Linear） | Agent 侧 GraphQL 工具（PMS 由 orchestrator 写回，见 [pms-tracker.md](./pms-tracker.md)） |
 | `[MISSING_INFO]` harness 解析 | 结构化 turn outcome |
 | clarification 超时 sweeper | 自动 reset + 超时评论 |
 | Codex Policy 对等 | 与 Cursor 相同 Policy 流程 |

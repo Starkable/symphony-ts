@@ -25,6 +25,8 @@ function baseConfig(
       terminalStates: ["Done"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
       ...trackerOverrides,
     },

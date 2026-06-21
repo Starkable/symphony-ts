@@ -19,6 +19,7 @@ import type {
   IssueTracker,
 } from "../../src/tracker/tracker.js";
 import { withHarnessConfig } from "../helpers/workflow-config.js";
+import * as workflowHarnessStop from "../../src/workflow/workflow-harness-stop.js";
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -249,6 +250,39 @@ describe("AgentRunner", () => {
       name: "beforeRun",
       workspacePath,
     });
+  });
+
+  it("stops continuation turns when V1.2 workflow artifacts are complete", async () => {
+    const root = await createRoot();
+    const completeSpy = vi
+      .spyOn(workflowHarnessStop, "isWorkflowAllComplete")
+      .mockResolvedValue(true);
+
+    try {
+      const runner = new AgentRunner({
+        config: createConfig(root, "unused"),
+        tracker: createTracker({
+          refreshStates: [
+            { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+            { id: "issue-1", identifier: "ABC-123", state: "In Progress" },
+          ],
+        }),
+        createCodexClient: (input) =>
+          createStubCodexClient([], input, {
+            statuses: ["completed", "completed", "completed"],
+          }),
+      });
+
+      const result = await runner.run({
+        issue: ISSUE_FIXTURE,
+        attempt: null,
+      });
+
+      expect(result.turnsCompleted).toBe(1);
+      expect(result.runAttempt.status).toBe("succeeded");
+    } finally {
+      completeSpy.mockRestore();
+    }
   });
 
   it("closes the session and still runs after_run best-effort when refresh fails", async () => {
@@ -483,6 +517,8 @@ function createConfig(root: string, scenario: string): ResolvedWorkflowConfig {
       terminalStates: ["Done", "Canceled"],
       issueTypes: [],
       excludeDraftStatus: false,
+      assignees: [],
+      stateAliases: {},
       oauth: null,
     },
     polling: {

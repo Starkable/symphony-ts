@@ -3,22 +3,25 @@ import { isAbsolute, normalize, resolve, sep } from "node:path";
 
 import { isCursorCommandAvailable } from "../agent/backends/cursor/cursor-command-resolve.js";
 import {
-  normalizeIssueState,
   type WorkflowDefinition,
+  normalizeIssueState,
 } from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
+import { PMS_STATE_ALIASES } from "../tracker/pms/pms-status-alias.js";
 import {
   DEFAULT_ACTIVE_STATES,
+  DEFAULT_ARTIFACT_STORE_ENABLED,
+  DEFAULT_ARTIFACT_STORE_HYDRATE,
   DEFAULT_CODEX_COMMAND,
   DEFAULT_CURSOR_COMMAND,
   DEFAULT_CURSOR_MODE,
   DEFAULT_CURSOR_MODEL,
   DEFAULT_CURSOR_REUSE_POLICY,
-  DEFAULT_CURSOR_TURN_TIMEOUT_MS,
   DEFAULT_CURSOR_TURN_LOG_ENABLED,
   DEFAULT_CURSOR_TURN_LOG_INCLUDE_PROMPT,
   DEFAULT_CURSOR_TURN_LOG_MAX_BYTES,
   DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
+  DEFAULT_CURSOR_TURN_TIMEOUT_MS,
   DEFAULT_HOOK_TIMEOUT_MS,
   DEFAULT_LINEAR_ENDPOINT,
   DEFAULT_LINEAR_NETWORK_TIMEOUT_MS,
@@ -27,8 +30,6 @@ import {
   DEFAULT_MAX_CONCURRENT_AGENTS_BY_STATE,
   DEFAULT_MAX_RETRY_BACKOFF_MS,
   DEFAULT_MAX_TURNS,
-  DEFAULT_ARTIFACT_STORE_ENABLED,
-  DEFAULT_ARTIFACT_STORE_HYDRATE,
   DEFAULT_OBSERVABILITY_ENABLED,
   DEFAULT_OBSERVABILITY_REFRESH_MS,
   DEFAULT_OBSERVABILITY_RENDER_INTERVAL_MS,
@@ -39,14 +40,11 @@ import {
   DEFAULT_STALL_TIMEOUT_MS,
   DEFAULT_TERMINAL_STATES,
   DEFAULT_TRACKER_KIND,
+  DEFAULT_TRACKER_STATE_ALIASES,
   DEFAULT_TURN_TIMEOUT_MS,
   DEFAULT_WORKSPACE_ROOT,
   PMS_TRACKER_KIND,
 } from "./defaults.js";
-import {
-  parseSymphonyWorkflowConfig,
-  validateSymphonyWorkflowConfig,
-} from "./workflow-phases-parser.js";
 import type {
   AgentHarnessKind,
   CursorHarnessMode,
@@ -58,12 +56,17 @@ import type {
   WorkflowCursorHarnessConfig,
   WorkflowTrackerOAuthConfig,
 } from "./types.js";
+import {
+  parseSymphonyWorkflowConfig,
+  validateSymphonyWorkflowConfig,
+} from "./workflow-phases-parser.js";
 
 const LINEAR_CANONICAL_API_KEY_ENV = "LINEAR_API_KEY";
 const PMS_CANONICAL_ACCESS_TOKEN_ENV = "PMS_OAUTH_ACCESS_TOKEN";
 const PMS_CANONICAL_ACCESS_TOKEN_SECRET_ENV = "PMS_OAUTH_ACCESS_TOKEN_SECRET";
 const PMS_CANONICAL_RSA_KEY_PATH_ENV = "PMS_JIRA_KEY_PATH";
 const PMS_CANONICAL_SERVER_ENV = "PMS_JIRA_SERVER";
+const PMS_TRACKER_ASSIGNEE_ENV = "PMS_TRACKER_ASSIGNEE";
 
 export function resolveWorkflowConfig(
   workflow: WorkflowDefinition & { workflowPath: string },
@@ -114,6 +117,11 @@ export function resolveWorkflowConfig(
       ),
       issueTypes: readStringList(tracker.issue_types, []),
       excludeDraftStatus: readBoolean(tracker.exclude_draft_status) ?? false,
+      assignees: resolveTrackerAssignees(tracker, environment),
+      stateAliases:
+        normalizedKind === PMS_TRACKER_KIND
+          ? PMS_STATE_ALIASES
+          : DEFAULT_TRACKER_STATE_ALIASES,
       oauth:
         normalizedKind === PMS_TRACKER_KIND
           ? resolveTrackerOAuthConfig(
@@ -559,6 +567,21 @@ function readStringList(value: unknown, fallback: readonly string[]): string[] {
   }
 
   return [...fallback];
+}
+
+function resolveTrackerAssignees(
+  tracker: Record<string, unknown>,
+  environment: NodeJS.ProcessEnv,
+): string[] {
+  const fromEnv = environment[PMS_TRACKER_ASSIGNEE_ENV]?.trim();
+  if (fromEnv !== undefined && fromEnv !== "") {
+    return fromEnv
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== "");
+  }
+
+  return readStringList(tracker.assignee, []);
 }
 
 function readStateConcurrencyMap(

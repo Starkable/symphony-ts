@@ -119,6 +119,28 @@ describe("prompt builder", () => {
     expect(prompt).toContain("initial dispatch");
   });
 
+  it("appends PMS comments section when trackerComments present", async () => {
+    const prompt = await renderPrompt({
+      workflow: {
+        promptTemplate: "Issue {{ issue.identifier }}",
+      },
+      issue: {
+        ...ISSUE_FIXTURE,
+        trackerComments: [
+          {
+            author: "pm",
+            body: "请补充验收标准",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+      attempt: null,
+    });
+
+    expect(prompt).toContain("## PMS 备注");
+    expect(prompt).toContain("请补充验收标准");
+  });
+
   it("fails on unknown variables in strict mode", async () => {
     await expect(
       renderPrompt({

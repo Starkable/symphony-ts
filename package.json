@@ -42,7 +42,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "pms:smoke": "node dist/src/cli/pms-smoke.js",
-    "pms:verify-jql": "node dist/src/cli/pms-verify-jql.js"
+    "pms:verify-jql": "node dist/src/cli/pms-verify-jql.js",
+    "pms:probe": "node dist/src/cli/pms-probe.js"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

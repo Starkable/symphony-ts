@@ -3,14 +3,14 @@ import {
   DEFAULT_PMS_PAGE_SIZE,
 } from "../../config/defaults.js";
 import type { ResolvedWorkflowConfig } from "../../config/types.js";
-import type { Issue } from "../../domain/model.js";
+import type { Issue, TrackerComment } from "../../domain/model.js";
 import { ERROR_CODES } from "../../errors/codes.js";
 import { TrackerError, toTrackerRequestError } from "../errors.js";
 import type { IssueStateSnapshot, IssueTracker } from "../tracker.js";
 import {
   buildCandidateIssuesJql,
-  buildIssuesByStatesJql,
   buildIssueStatesByIdsJql,
+  buildIssuesByStatesJql,
 } from "./pms-jql.js";
 import {
   normalizePmsIssue,
@@ -19,10 +19,22 @@ import {
   resolvePmsRestBaseUrl,
 } from "./pms-normalize.js";
 import {
+  type PmsOAuthCredentials,
   buildOAuthAuthorizationHeader,
   loadRsaPrivateKeyPem,
-  type PmsOAuthCredentials,
 } from "./pms-oauth.js";
+import {
+  type PmsTransitionEntry,
+  findTransitionMatch,
+} from "./pms-transition.js";
+
+export interface PmsWriteResult {
+  ok: boolean;
+  status: number;
+  errorBody: string;
+}
+
+export const DEFAULT_PMS_COMMENT_PROMPT_LIMIT = 10;
 
 const ISSUE_SEARCH_FIELD_LIST = [
   "summary",
@@ -88,10 +100,15 @@ export interface PmsTrackerClientOptions {
   activeStates: string[];
   issueTypes?: string[];
   excludeDraftStatus?: boolean;
+  assignees?: string[];
   oauth: PmsOAuthCredentials;
   pageSize?: number;
   networkTimeoutMs?: number;
   fetchFn?: typeof fetch;
+  onCommentFetchWarning?: (input: {
+    issueKey: string;
+    message: string;
+  }) => void;
 }
 
 export class PmsTrackerClient implements IssueTracker {
@@ -101,10 +118,12 @@ export class PmsTrackerClient implements IssueTracker {
   private readonly activeStates: string[];
   private readonly issueTypes: string[];
   private readonly excludeDraftStatus: boolean;
+  private readonly assignees: string[];
   private readonly oauth: PmsOAuthCredentials;
   private readonly pageSize: number;
   private readonly networkTimeoutMs: number;
   private readonly fetchFn: typeof fetch;
+  private readonly onCommentFetchWarning?: PmsTrackerClientOptions["onCommentFetchWarning"];
 
   constructor(options: PmsTrackerClientOptions) {
     this.restBaseUrl = resolvePmsRestBaseUrl(options.serverUrl);
@@ -113,11 +132,13 @@ export class PmsTrackerClient implements IssueTracker {
     this.activeStates = [...options.activeStates];
     this.issueTypes = [...(options.issueTypes ?? [])];
     this.excludeDraftStatus = options.excludeDraftStatus ?? false;
+    this.assignees = [...(options.assignees ?? [])];
     this.oauth = options.oauth;
     this.pageSize = options.pageSize ?? DEFAULT_PMS_PAGE_SIZE;
     this.networkTimeoutMs =
       options.networkTimeoutMs ?? DEFAULT_PMS_NETWORK_TIMEOUT_MS;
     this.fetchFn = options.fetchFn ?? globalThis.fetch;
+    this.onCommentFetchWarning = options.onCommentFetchWarning;
   }
 
   static fromConfig(config: ResolvedWorkflowConfig): PmsTrackerClient {
@@ -150,6 +171,7 @@ export class PmsTrackerClient implements IssueTracker {
       activeStates: config.tracker.activeStates,
       issueTypes: config.tracker.issueTypes,
       excludeDraftStatus: config.tracker.excludeDraftStatus,
+      assignees: config.tracker.assignees,
       oauth: {
         consumerKey: oauthConfig.consumerKey,
         accessToken,
@@ -186,7 +208,9 @@ export class PmsTrackerClient implements IssueTracker {
       this.activeStates,
       this.projectJqlOptions(),
     );
-    return this.searchIssues(jql, ISSUE_SEARCH_FIELDS);
+    const issues = await this.searchIssues(jql, ISSUE_SEARCH_FIELDS);
+    await this.attachCommentsToIssues(issues);
+    return issues;
   }
 
   async fetchIssuesByStates(stateNames: string[]): Promise<Issue[]> {
@@ -206,7 +230,128 @@ export class PmsTrackerClient implements IssueTracker {
     return {
       issueTypes: this.issueTypes,
       excludeDraftStatus: this.excludeDraftStatus,
+      assignees: this.assignees,
     };
+  }
+
+  async listIssueComments(issueKey: string): Promise<TrackerComment[]> {
+    const url = `${this.restBaseUrl}/issue/${encodeURIComponent(issueKey)}/comment`;
+    const response = await this.authenticatedFetch("GET", url);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new TrackerError(
+        ERROR_CODES.trackerHttpError,
+        `PMS comment list failed with HTTP ${response.status}.`,
+        { status: response.status, details: text.slice(0, 800) },
+      );
+    }
+
+    let parsed: { comments?: unknown };
+    try {
+      parsed = JSON.parse(text) as { comments?: unknown };
+    } catch (error) {
+      throw new TrackerError(
+        ERROR_CODES.trackerResponseMalformed,
+        "PMS comment payload was not JSON.",
+        { cause: error },
+      );
+    }
+
+    if (!Array.isArray(parsed.comments)) {
+      return [];
+    }
+
+    return parsed.comments
+      .map((entry) => normalizePmsComment(entry))
+      .filter((entry): entry is TrackerComment => entry !== null);
+  }
+
+  async addIssueComment(
+    issueKey: string,
+    body: string,
+  ): Promise<PmsWriteResult> {
+    const url = `${this.restBaseUrl}/issue/${encodeURIComponent(issueKey)}/comment`;
+    const response = await this.authenticatedFetch("POST", url, { body });
+    const responseText = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      errorBody: response.ok ? "" : responseText.slice(0, 800),
+    };
+  }
+
+  async listIssueTransitions(issueKey: string): Promise<PmsTransitionEntry[]> {
+    const url = `${this.restBaseUrl}/issue/${encodeURIComponent(issueKey)}/transitions`;
+    const response = await this.authenticatedFetch("GET", url);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new TrackerError(
+        ERROR_CODES.trackerHttpError,
+        `PMS transitions list failed with HTTP ${response.status}.`,
+        { status: response.status, details: text.slice(0, 800) },
+      );
+    }
+
+    const parsed = JSON.parse(text) as { transitions?: unknown };
+    if (!Array.isArray(parsed.transitions)) {
+      return [];
+    }
+
+    return parsed.transitions
+      .map((entry) => normalizePmsTransition(entry))
+      .filter((entry): entry is PmsTransitionEntry => entry !== null);
+  }
+
+  async transitionIssue(
+    issueKey: string,
+    transitionId: string,
+  ): Promise<PmsWriteResult> {
+    const url = `${this.restBaseUrl}/issue/${encodeURIComponent(issueKey)}/transitions`;
+    const response = await this.authenticatedFetch("POST", url, {
+      transition: { id: transitionId },
+    });
+    const responseText = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      errorBody: response.ok ? "" : responseText.slice(0, 800),
+    };
+  }
+
+  async transitionIssueByTarget(
+    issueKey: string,
+    targetSubstr: string,
+  ): Promise<PmsWriteResult & { transitionId: string | null }> {
+    const transitions = await this.listIssueTransitions(issueKey);
+    const match = findTransitionMatch(transitions, targetSubstr);
+    if (match === null) {
+      return {
+        ok: false,
+        status: 0,
+        errorBody: `No unique transition match for ${JSON.stringify(targetSubstr)}`,
+        transitionId: null,
+      };
+    }
+
+    const result = await this.transitionIssue(issueKey, match.id);
+    return { ...result, transitionId: match.id };
+  }
+
+  private async attachCommentsToIssues(issues: Issue[]): Promise<void> {
+    await Promise.all(
+      issues.map(async (issue) => {
+        try {
+          const comments = await this.listIssueComments(issue.identifier);
+          issue.trackerComments = comments;
+        } catch (error) {
+          issue.trackerComments = [];
+          this.onCommentFetchWarning?.({
+            issueKey: issue.identifier,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+    );
   }
 
   async fetchIssueStatesByIds(
@@ -325,6 +470,68 @@ export class PmsTrackerClient implements IssueTracker {
 
     return this.projectKey.trim();
   }
+}
+
+function normalizePmsComment(entry: unknown): TrackerComment | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as {
+    body?: unknown;
+    author?: { displayName?: unknown; name?: unknown };
+    created?: unknown;
+  };
+
+  const body =
+    typeof record.body === "string"
+      ? record.body
+      : record.body === null || record.body === undefined
+        ? ""
+        : String(record.body);
+
+  const authorRecord = record.author;
+  const authorName =
+    authorRecord && typeof authorRecord === "object"
+      ? typeof authorRecord.displayName === "string"
+        ? authorRecord.displayName
+        : typeof authorRecord.name === "string"
+          ? authorRecord.name
+          : null
+      : null;
+
+  return {
+    author: authorName,
+    body,
+    createdAt: typeof record.created === "string" ? record.created : null,
+  };
+}
+
+function normalizePmsTransition(entry: unknown): PmsTransitionEntry | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as {
+    id?: unknown;
+    name?: unknown;
+    to?: { name?: unknown };
+  };
+
+  const id =
+    typeof record.id === "string"
+      ? record.id
+      : typeof record.id === "number"
+        ? String(record.id)
+        : null;
+  const name = typeof record.name === "string" ? record.name : null;
+  const toStatus = typeof record.to?.name === "string" ? record.to.name : "";
+
+  if (id === null || name === null) {
+    return null;
+  }
+
+  return { id, name, toStatus };
 }
 
 export async function validatePmsTrackerAuthIfConfigured(

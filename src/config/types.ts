@@ -25,6 +25,10 @@ export interface WorkflowTrackerConfig {
   issueTypes: string[];
   /** When true, append status not in ("草稿", "审核中") to candidate JQL. */
   excludeDraftStatus: boolean;
+  /** Optional assignee login names for PMS JQL `assignee in (...)`. */
+  assignees: string[];
+  /** JQL 名 → 展示名；PMS tracker 用于 dispatch/reconcile。 */
+  stateAliases: Readonly<Record<string, readonly string[]>>;
   /** Present when `kind` is `pms`; null for Linear. */
   oauth: WorkflowTrackerOAuthConfig | null;
 }

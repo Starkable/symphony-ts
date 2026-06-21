@@ -50,35 +50,48 @@ describe("pms-client", () => {
       },
     }));
 
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            issues: fullPage,
-            startAt: 0,
-            maxResults: 50,
-          },
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        Response.json(
+    const fetchFn = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/comment")) {
+        return Response.json({ comments: [] }, { status: 200 });
+      }
+
+      if (url.includes("/search")) {
+        const searchCalls = fetchFn.mock.calls.filter((call) =>
+          String(call[0]).includes("/search"),
+        );
+        if (searchCalls.length === 1) {
+          return Response.json(
+            {
+              issues: fullPage,
+              startAt: 0,
+              maxResults: 50,
+            },
+            { status: 200 },
+          );
+        }
+
+        return Response.json(
           {
             issues: [],
             startAt: 50,
             maxResults: 50,
           },
           { status: 200 },
-        ),
-      );
+        );
+      }
+
+      return Response.json({}, { status: 404 });
+    });
 
     const client = createTestClient(fetchFn);
     const issues = await client.fetchCandidateIssues();
 
     expect(issues).toHaveLength(50);
     expect(issues[0]?.identifier).toBe("BASELINEREQ-1");
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(
+      fetchFn.mock.calls.filter((call) => String(call[0]).includes("/search")),
+    ).toHaveLength(2);
   });
 
   it("returns empty arrays for empty state or id lists", async () => {
@@ -116,5 +129,49 @@ describe("pms-client", () => {
         state: "开发中",
       },
     ]);
+  });
+
+  it("adds issue comment via POST", async () => {
+    const fetchFn = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/comment") && init?.method === "POST") {
+          return new Response(null, { status: 201 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      },
+    );
+    const client = createTestClient(fetchFn);
+
+    await expect(
+      client.addIssueComment("BCS-1", "[Symphony] test"),
+    ).resolves.toMatchObject({ ok: true, status: 201 });
+  });
+
+  it("transitions issue by target name", async () => {
+    const fetchFn = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/transitions") && init?.method === "GET") {
+          return Response.json(
+            {
+              transitions: [
+                { id: "221", name: "提测", to: { name: "已提测" } },
+              ],
+            },
+            { status: 200 },
+          );
+        }
+        if (url.includes("/transitions") && init?.method === "POST") {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      },
+    );
+    const client = createTestClient(fetchFn);
+
+    await expect(
+      client.transitionIssueByTarget("BCS-1", "已提测"),
+    ).resolves.toMatchObject({ ok: true, status: 204, transitionId: "221" });
   });
 });

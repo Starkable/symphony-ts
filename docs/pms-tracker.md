@@ -1,6 +1,6 @@
-# PMS Tracker（只读）
+# PMS Tracker（读 + Orchestrator 写回）
 
-Symphony 支持 `tracker.kind: pms`，从爱奇艺内部 PMS（Jira REST）**只读**拉取工单，驱动 orchestrator 的 poll / dispatch / reconcile。
+Symphony 支持 `tracker.kind: pms`，从爱奇艺内部 PMS（Jira REST）**读取**工单并驱动 orchestrator 的 poll / dispatch / reconcile；worker **正常结束**后由 orchestrator **写回**状态与评论（Agent 不直接写 PMS）。
 
 实现为纯 TypeScript（OAuth 1.0a + RSA-SHA1 + Jira REST），不依赖 Python、pms-opt-skill 或 FSB 运行时调用。
 
@@ -14,7 +14,8 @@ tracker:
   endpoint: http://pms.qiyi.domain
   project_slug: CS
   active_states: [Open, "In Progress"]
-  terminal_states: [Done, Closed]
+  terminal_states: [已提测]
+  assignee: shenxianghong_wb
   issue_types: [产品需求]
   exclude_draft_status: true
   oauth:
@@ -30,6 +31,7 @@ tracker:
 | 字段 | 说明 |
 |------|------|
 | `issue_types` | JQL `issuetype in (...)`，例如 `[产品需求]` |
+| `assignee` | JQL `assignee in (...)`；可用 `PMS_TRACKER_ASSIGNEE` 环境变量覆盖（逗号分隔） |
 | `exclude_draft_status` | 为 `true` 时追加 `status not in ("草稿", "审核中")`；`active_states` 为空时还会使用 `statusCategory != Done` |
 
 - `active_states` / `terminal_states` 必须与 **JQL 可用的 status 名**一致（与 UI 展示名可能不同）。详见 [pms-field-mapping.md](./pms-field-mapping.md) 第 3 节；以 `pnpm pms:verify-jql` 实测为准。
@@ -48,12 +50,13 @@ tracker:
 | `oauth.access_token_secret` | `PMS_OAUTH_ACCESS_TOKEN_SECRET` |
 | `oauth.rsa_private_key_path` | `PMS_JIRA_KEY_PATH` |
 | `endpoint` | `PMS_JIRA_SERVER` |
+| `assignee` | `PMS_TRACKER_ASSIGNEE` |
 
 RSA 私钥路径支持 `~` 展开与相对 WORKFLOW.md 的路径解析。
 
 ## 状态名注意事项
 
-`active_states` 与 `terminal_states` 配置错误会导致 JQL HTTP 400 或 poll 无候选工单。JQL 状态名与 PMS 界面展示名可能不一致（例如 JQL 写 `In Progress`，返回 `state` 为 `进行中`）。
+`active_states` 与 `terminal_states` 配置错误会导致 JQL HTTP 400 或 poll 无候选工单。JQL 状态名与 PMS 界面展示名可能不一致（例如 JQL 写 `In Progress`，返回 `state` 为 `进行中`）。Symphony 内置 **status alias** 用于 dispatch/reconcile 比对，详见 [pms-field-mapping.md](./pms-field-mapping.md) 第 3 节。
 
 - 字段对照与项目差异说明：[pms-field-mapping.md](./pms-field-mapping.md)
 - 联调前建议运行：
@@ -65,19 +68,36 @@ pnpm pms:verify-jql examples/workflow-pms/WORKFLOW.md
 
 报告输出到 `tmp/pms-jql-verify-report.json`。
 
-## 一期能力边界
+## 能力边界
 
-**支持：**
+**读（poll / prompt）：**
 
 - `fetchCandidateIssues` / `fetchIssuesByStates` / `fetchIssueStatesByIds`
+- 候选工单 **评论读取**（`listIssueComments`），注入 prompt「PMS 备注」节
 - 启动时 OAuth 鉴权探测（`GET /rest/api/2/myself`，可通过 `validate_on_dispatch: false` 关闭）
+- `assignee` 过滤 + `ORDER BY updated ASC`（启用 assignee 时）
+
+**写（orchestrator 写回，非 Agent）：**
+
+- worker 正常结束后解析 `.symphony/workpad.md`
+- `CLARIFY_BLOCKED` → transition **开发暂停** + POST 评论
+- `Phase: done` → transition **提测**（目标 **已提测**），不写评论
+- 写失败 **pending 重试**（poll tick），不阻塞 dispatch
 
 **不支持：**
 
-- 评论写回、状态流转、建单
-- Agent 侧 PMS 写回工具（Codex 不会注入 `linear_graphql`，也不会注入 PMS 工具）
+- Agent 侧 PMS 写回工具（Codex 不会注入 PMS REST 工具）
+- 建单、任意 transition（仅上述两条写回路径）
 
-`[CLARIFY]` 等澄清内容在一期仅写入 Workpad，不会同步到 PMS 评论。
+### 测试分级等 transition 必填字段
+
+BCS 等项目在 **提测** transition 时可能要求「测试分级」等自定义字段。若写回返回 HTTP 400：
+
+1. 在 PMS 中为 OAuth 用户补字段编辑权限或默认值
+2. 用 `pnpm pms:probe ... --allow-write --transition-to "提测"` 在测试工单上验证
+3. 查 structured log 中 `pms_writeback` 的 HTTP status 与 error body
+
+写回矩阵详见 [pms-field-mapping.md](./pms-field-mapping.md) 第 5 节。
 
 ## 联调 Checklist
 
@@ -118,3 +138,49 @@ pnpm pms:verify-jql examples/workflow-pms/WORKFLOW.md
 ```
 
 脚本会输出结构化 JSON，包含 `total`（候选工单总数）与 `preview`（前 N 条摘要）。运行环境须能访问 `tracker.endpoint`。
+
+## BCS 集成验证（前置 spike）
+
+在实现 PMS assignee 过滤、评论读写、状态流转（开发暂停 / 已提测）之前，先运行验证 CLI 收集真实 PMS 证据。
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `PMS_VERIFY_PROJECT` | `BCS` | JQL 与 statuses 探测的项目 key |
+| `PMS_VERIFY_ASSIGNEE` | `shenxianghong_wb` | assignee JQL case 使用的登录名 |
+| `PMS_PROBE_ISSUE_KEY` | （无） | transitions/comments 探测用的工单 key |
+
+### 命令
+
+```bash
+pnpm build
+
+# 扩展 JQL 矩阵（含 BCS assignee + 目标状态）
+pnpm pms:verify-jql examples/workflow-pms/WORKFLOW.md
+
+# 完整 probe：JQL + project statuses + issue transitions/comments
+export PMS_PROBE_ISSUE_KEY=BCS-xxxx
+pnpm pms:probe examples/workflow-pms/WORKFLOW.md
+
+# 可选写探测（仅测试工单，显式 opt-in）
+pnpm pms:probe examples/workflow-pms/WORKFLOW.md \
+  --probe-issue-key BCS-xxxx \
+  --allow-write \
+  --transition-to "开发暂停"
+```
+
+### 报告字段（`tmp/pms-bcs-verify-report.json`）
+
+| 字段 | 说明 |
+|------|------|
+| `jqlCases[].jqlValid` | JQL search HTTP 200 |
+| `jqlCases[].hasMatchingIssues` | `total > 0` |
+| `jqlCases[].jqlStatusName` | JQL 中配置的 status 字符串 |
+| `jqlCases[].returnedStatusName` | 首条 issue 的 `fields.status.name`（展示名） |
+| `projectStatuses` | `GET /project/{key}/statuses` 按 issuetype 分组 |
+| `transitions` | 指定工单的可用 transition 列表 |
+| `comments` | 指定工单的评论读取结果 |
+| `writeProbe` | `--allow-write` 时的 comment/transition 探测结果 |
+
+后续 PMS 读/写 change 启动前，关键 BCS JQL case 应在真实环境 `jqlValid: true`。详见 [`openspec/changes/pms-bcs-integration-verify/evidence/README.md`](../openspec/changes/pms-bcs-integration-verify/evidence/README.md)。

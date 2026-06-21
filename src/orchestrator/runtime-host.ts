@@ -14,6 +14,12 @@ import type {
   HarnessRunResult,
 } from "../agent/harness/types.js";
 import type { AgentRunnerEvent } from "../agent/runner.js";
+import type { ExportIfExportableResult } from "../artifact-store/exportable-content.js";
+import { ArtifactStore, WorkflowExporter } from "../artifact-store/index.js";
+import type {
+  WorkflowDetail,
+  WorkflowSummary,
+} from "../artifact-store/types.js";
 import { validateDispatchConfig } from "../config/config-resolver.js";
 import type { ResolvedWorkflowConfig } from "../config/types.js";
 import { WorkflowWatcher } from "../config/workflow-watch.js";
@@ -23,15 +29,6 @@ import {
   type RuntimeSnapshot,
   buildRuntimeSnapshot,
 } from "../logging/runtime-snapshot.js";
-import { ArtifactStore, WorkflowExporter } from "../artifact-store/index.js";
-import type {
-  WorkflowDetail,
-  WorkflowSummary,
-} from "../artifact-store/types.js";
-import {
-  WorkflowService,
-  type WorkflowListStatus,
-} from "../observability/workflow-service.js";
 import {
   StructuredLogger,
   createJsonLineSink,
@@ -43,9 +40,19 @@ import {
   type RefreshResponse,
   startDashboardServer,
 } from "../observability/dashboard-server.js";
-import { validatePmsTrackerAuthIfConfigured } from "../tracker/pms/pms-client.js";
+import {
+  type WorkflowListStatus,
+  WorkflowService,
+} from "../observability/workflow-service.js";
+import {
+  PmsTrackerClient,
+  validatePmsTrackerAuthIfConfigured,
+} from "../tracker/pms/pms-client.js";
+import { PmsWritebackService } from "../tracker/pms/pms-writeback.js";
 import { createIssueTracker } from "../tracker/tracker-factory.js";
 import type { IssueTracker } from "../tracker/tracker.js";
+import { resolveChangeRef } from "../workflow/change-ref-path.js";
+import { deriveEffectivePhase } from "../workflow/derive-effective-phase.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
 import type {
@@ -144,12 +151,15 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
   private readonly workflowExporter: WorkflowExporter | null;
 
+  private pmsWriteback: PmsWritebackService | null = null;
+
   // 构造函数：构造函数
   constructor(options: RuntimeHostOptions) {
     // 配置：配置
     this.config = options.config;
     // 任务类：任务类
     this.tracker = options.tracker;
+    this.pmsWriteback = this.createPmsWritebackService(options.tracker);
     // 现在：现在
     this.now = options.now ?? (() => new Date());
     // 日志记录器：日志记录器
@@ -244,6 +254,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
 
     if (input.tracker !== undefined) {
       this.tracker = input.tracker;
+      this.pmsWriteback = this.createPmsWritebackService(input.tracker);
       this.orchestrator.updateTracker(input.tracker);
     }
 
@@ -276,7 +287,12 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
   }
 
   async pollOnce() {
-    return this.enqueue(async () => this.orchestrator.pollTick());
+    return this.enqueue(async () => {
+      if (this.pmsWriteback !== null) {
+        await this.pmsWriteback.retryPending(this.logger);
+      }
+      return this.orchestrator.pollTick();
+    });
   }
 
   async runRetryTimer(issueId: string) {
@@ -404,9 +420,9 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     });
   }
 
-  async exportTerminalIssue(issue: Issue): Promise<void> {
+  async exportTerminalIssue(issue: Issue): Promise<ExportIfExportableResult> {
     if (this.workflowExporter === null) {
-      return;
+      return { exported: false, reason: "disabled" };
     }
 
     const workspacePath = this.workspaceManager.resolveForIssue(
@@ -414,12 +430,13 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     ).workspacePath;
     const running = this.orchestrator.getState().running[issue.id] ?? null;
 
-    await this.workflowExporter.exportIssue({
+    return this.workflowExporter.exportIssueIfExportable({
       issue,
       workspacePath,
       running,
       workflow: this.config.workflow,
       now: this.now(),
+      setArchivedReason: "pms_terminal_cleanup",
     });
   }
 
@@ -433,12 +450,13 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       this.workspaceManager.resolveForIssue(issueId).workspacePath;
 
     if (running !== undefined) {
-      await this.workflowExporter.exportIssue({
+      await this.workflowExporter.exportIssueIfExportable({
         issue: running.issue,
         workspacePath,
         running,
         workflow: this.config.workflow,
         now: this.now(),
+        setArchivedReason: "pms_terminal_cleanup",
       });
       return;
     }
@@ -448,7 +466,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       return;
     }
 
-    await this.workflowExporter.exportIssue({
+    await this.workflowExporter.exportIssueIfExportable({
       issue: {
         id: issueId,
         identifier: retry.identifier,
@@ -459,6 +477,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       running: null,
       workflow: this.config.workflow,
       now: this.now(),
+      setArchivedReason: "pms_terminal_cleanup",
     });
   }
 
@@ -467,6 +486,16 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
     return () => {
       this.snapshotListeners.delete(listener);
     };
+  }
+
+  private createPmsWritebackService(
+    tracker: IssueTracker,
+  ): PmsWritebackService | null {
+    if (!(tracker instanceof PmsTrackerClient)) {
+      return null;
+    }
+
+    return new PmsWritebackService(tracker);
   }
 
   private async spawnWorkerExecution(
@@ -553,6 +582,40 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
   ): Promise<void> {
     this.workers.delete(execution.issueId);
 
+    const runningEntry =
+      this.orchestrator.getState().running[execution.issueId];
+    let workflowComplete = false;
+    let workspacePath: string | undefined;
+    if (input.outcome === "normal" && runningEntry !== undefined) {
+      workspacePath = this.workspaceManager.resolveForIssue(
+        execution.issueId,
+      ).workspacePath;
+      const workflow = this.config.workflow;
+      if (workflow !== null && workflow.phases.length > 0) {
+        const derived = await deriveEffectivePhase({
+          workspacePath,
+          changeRef: resolveChangeRef(runningEntry.identifier),
+          phases: workflow.phases,
+        });
+        workflowComplete = derived.allComplete;
+      }
+    }
+
+    if (
+      input.outcome === "normal" &&
+      this.pmsWriteback !== null &&
+      runningEntry !== undefined &&
+      workspacePath !== undefined
+    ) {
+      await this.pmsWriteback.processCompletionSignal({
+        issueKey: runningEntry.identifier,
+        issueState: runningEntry.issue.state,
+        workspacePath,
+        logger: this.logger,
+        workflow: this.config.workflow,
+      });
+    }
+
     await this.logger?.log(
       input.outcome === "normal" ? "info" : "error",
       input.outcome === "normal"
@@ -580,6 +643,7 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       outcome: input.outcome,
       ...(input.reason === undefined ? {} : { reason: input.reason }),
       endedAt: input.endedAt ?? this.now(),
+      workflowComplete,
     });
   }
 
@@ -673,7 +737,7 @@ export async function startRuntimeService(
     ...(runtimeHost.isWorkflowDashboardEnabled()
       ? {
           exportBeforeRemove: async (issue) => {
-            await runtimeHost.exportTerminalIssue(issue);
+            return runtimeHost.exportTerminalIssue(issue);
           },
         }
       : {}),
@@ -961,7 +1025,9 @@ async function cleanupTerminalIssueWorkspaces(input: {
   terminalStates: string[];
   workspaceManager: WorkspaceManager;
   logger: StructuredLogger;
-  exportBeforeRemove?: (issue: Issue) => Promise<void>;
+  exportBeforeRemove?: (
+    issue: Issue,
+  ) => Promise<ExportIfExportableResult | undefined>;
 }): Promise<void> {
   try {
     const issues = await input.tracker.fetchIssuesByStates(
@@ -970,7 +1036,23 @@ async function cleanupTerminalIssueWorkspaces(input: {
     await Promise.all(
       issues.map(async (issue) => {
         if (input.exportBeforeRemove !== undefined) {
-          await input.exportBeforeRemove(issue);
+          const result = await input.exportBeforeRemove(issue);
+          if (
+            result !== undefined &&
+            !result.exported &&
+            result.reason !== undefined &&
+            result.reason !== "disabled"
+          ) {
+            await input.logger.info(
+              "startup_terminal_skip_export",
+              `Skipping artifact export for ${issue.identifier}.`,
+              {
+                issue_id: issue.id,
+                issue_identifier: issue.identifier,
+                reason: result.reason,
+              },
+            );
+          }
         }
         await input.workspaceManager.removeForIssue(issue.id);
       }),
