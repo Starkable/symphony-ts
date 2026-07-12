@@ -607,13 +607,23 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       runningEntry !== undefined &&
       workspacePath !== undefined
     ) {
-      await this.pmsWriteback.processCompletionSignal({
+      const writebackPending = await this.pmsWriteback.processCompletionSignal({
         issueKey: runningEntry.identifier,
         issueState: runningEntry.issue.state,
         workspacePath,
         logger: this.logger,
         workflow: this.config.workflow,
       });
+      if (workflowComplete && writebackPending) {
+        await this.logger?.warn(
+          "pms_writeback_pending_after_workflow_done",
+          "Workflow artifacts complete but PMS writeback is pending; claim released for scheduler hygiene.",
+          {
+            issue_identifier: runningEntry.identifier,
+            issue_id: execution.issueId,
+          },
+        );
+      }
     }
 
     await this.logger?.log(

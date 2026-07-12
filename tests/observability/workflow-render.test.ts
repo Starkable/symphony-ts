@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildWorkflowManifest } from "../../src/artifact-store/manifest-builder.js";
 import { parseWorkpad } from "../../src/artifact-store/workpad-parser.js";
-import { renderWorkflowDashboardHtml } from "../../src/observability/workflow-render.js";
+import { renderWorkflowDashboardHtml, renderWorkflowDetailHtml } from "../../src/observability/workflow-render.js";
 import type { RuntimeSnapshot } from "../../src/logging/runtime-snapshot.js";
 
 const snapshot: RuntimeSnapshot = {
@@ -75,5 +75,73 @@ describe("manifest synthetic reports", () => {
     expect(
       review?.artifacts.some((entry) => entry.display_name === "评审报告"),
     ).toBe(true);
+  });
+});
+
+describe("workflow-render V1.2", () => {
+  it("renders failed phase badge and execute artifact rows", () => {
+    const manifest = buildWorkflowManifest({
+      issueIdentifier: "BCS-1",
+      workpad: null,
+      currentPhase: "proposal_review",
+      workflow: {
+        version: "1.2",
+        changeRefStrategy: null,
+        phases: [
+          {
+            id: "proposal_review",
+            skill: "openspec-proposal-review",
+            produces: "openspec/changes/{change_ref}/proposal_review.md",
+            requiresPass: true,
+          },
+          {
+            id: "execute",
+            skill: "openspec-apply-change",
+            produces: "openspec/changes/{change_ref}/execute.md",
+            requiresPass: true,
+          },
+        ],
+      },
+      phaseCompletions: [
+        {
+          phaseId: "proposal_review",
+          complete: false,
+          failed: true,
+          completion: { exists: true, status: "fail", complete: false },
+        },
+      ],
+      openspecArtifacts: [
+        {
+          name: "execute.md",
+          type: "MD",
+          path: "openspec/changes/bcs-1/execute.md",
+          size_bytes: 10,
+          summary: null,
+          updated_at: null,
+        },
+      ],
+      logArtifacts: [],
+      proofArtifacts: [],
+    });
+
+    const html = renderWorkflowDetailHtml(
+      {
+        issue_identifier: "BCS-1",
+        issue_id: "1",
+        change_ref: "bcs-1",
+        mode: "v1.2-openspec",
+        title: "测试",
+        priority: "P1",
+        terminal_phase: null,
+        created_at: "2026-06-19T08:00:00.000Z",
+        updated_at: "2026-06-19T09:00:00.000Z",
+        manifest,
+      },
+      { liveUpdatesEnabled: false },
+    );
+
+    expect(html).toContain("未通过");
+    expect(html).toContain("execute.md");
+    expect(html).toContain("预览");
   });
 });

@@ -10,23 +10,39 @@ import { deriveEffectivePhase } from "../../src/workflow/derive-effective-phase.
 const DEFAULT_PHASES: WorkflowPhaseConfig[] = [
   {
     id: "clarify",
-    handler: "openspec-new-change",
+    skill: "openspec-new-change",
     produces: "openspec/changes/{change_ref}/proposal.md",
     requiresPass: false,
   },
   {
     id: "proposal_review",
-    handler: "openspec-proposal-review",
+    skill: "openspec-proposal-review",
     produces: "openspec/changes/{change_ref}/proposal_review.md",
     requiresPass: true,
   },
   {
     id: "plan",
-    handler: "openspec-continue-change",
+    skill: "openspec-continue-change",
     produces: "openspec/changes/{change_ref}/tasks.md",
     requiresPass: false,
   },
 ];
+
+const VALID_SCOPE = {
+  version: 1,
+  primary_repo: "leke-refund",
+  affected_repos: [
+    {
+      repo_key: "leke-refund",
+      mcp_project: "F-project-leke-refund",
+      role: "primary",
+      confidence: "high",
+      evidence: ["search_graph: RefundController"],
+    },
+  ],
+  materialized: false,
+  materialized_at: null,
+};
 
 const tempDirs: string[] = [];
 
@@ -85,7 +101,7 @@ describe("deriveEffectivePhase", () => {
     expect(result.currentPhase).toBe("proposal_review");
   });
 
-  it("blocks on review fail status", async () => {
+  it("returns clarify when proposal_review fails", async () => {
     const workspacePath = await createWorkspace();
     await writeRelative(
       workspacePath,
@@ -104,8 +120,60 @@ describe("deriveEffectivePhase", () => {
       phases: DEFAULT_PHASES,
     });
 
-    expect(result.currentPhase).toBe("proposal_review");
+    expect(result.currentPhase).toBe("clarify");
+    expect(result.effectivePhase?.id).toBe("clarify");
     expect(result.allComplete).toBe(false);
+  });
+
+  it("blocks clarify when scope.json exists but is invalid", async () => {
+    const workspacePath = await createWorkspace();
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/proposal.md",
+      "# Proposal",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/scope.json",
+      '{"version": 1}',
+    );
+
+    const result = await deriveEffectivePhase({
+      workspacePath,
+      changeRef: "bcs-423",
+      phases: DEFAULT_PHASES,
+    });
+
+    expect(result.currentPhase).toBe("clarify");
+    expect(result.scopeValidationFailed).toBe(true);
+  });
+
+  it("blocks plan when scope requires materialization", async () => {
+    const workspacePath = await createWorkspace();
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/proposal.md",
+      "# Proposal",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/proposal_review.md",
+      "---\nstatus: pass\n---\n# Review",
+    );
+    await writeRelative(
+      workspacePath,
+      "openspec/changes/bcs-423/scope.json",
+      JSON.stringify(VALID_SCOPE),
+    );
+
+    const result = await deriveEffectivePhase({
+      workspacePath,
+      changeRef: "bcs-423",
+      phases: DEFAULT_PHASES,
+    });
+
+    expect(result.currentPhase).toBe("plan");
+    expect(result.materializationBlocked).toBe(true);
   });
 
   it("returns done when all phases complete", async () => {
@@ -141,7 +209,7 @@ describe("deriveEffectivePhase", () => {
     const phases: WorkflowPhaseConfig[] = [
       {
         id: "archive",
-        handler: "openspec-archive-change",
+        skill: "openspec-archive-change",
         produces: "openspec/changes/{change_ref}/archive.md",
         requiresPass: true,
       },

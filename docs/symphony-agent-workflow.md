@@ -18,7 +18,7 @@
 WORKFLOW.md（workflow.phases 短表 + 薄 prompt 正文）
         │
         ▼
-Symphony 扫描产物 → deriveEffectivePhase → 每 turn 注入 handler + produces
+Symphony 扫描产物 → deriveEffectivePhase → 每 turn 注入 skill + produces
         │
         ▼
 openspec/changes/{change_ref}/（六产物，英文文件名）
@@ -35,28 +35,33 @@ workflow:
   change_ref: kebab_case_issue_id
   phases:
     - id: clarify
-      handler: openspec-new-change
+      skill: openspec-new-change
       produces: openspec/changes/{change_ref}/proposal.md
     - id: proposal_review
-      handler: openspec-proposal-review
+      skill: openspec-proposal-review
       produces: openspec/changes/{change_ref}/proposal_review.md
       requires_pass: true
     - id: plan
-      handler: openspec-continue-change
+      skill: openspec-continue-change
       produces: openspec/changes/{change_ref}/tasks.md
     - id: execute
-      handler: openspec-apply-change
+      skill: openspec-apply-change
       produces: openspec/changes/{change_ref}/execute.md
       requires_pass: true
     - id: verify
-      handler: openspec-verify
+      skill: openspec-verify
       produces: openspec/changes/{change_ref}/verification.md
       requires_pass: true
     - id: archive
-      handler: openspec-archive-change
+      skill: openspec-archive-change
       produces: openspec/changes/{change_ref}/archive.md
       requires_pass: true
 ```
+
+- `skill` 为 Cursor Skill 名称；legacy `handler` 字段仍可作为别名解析（deprecated）
+- 编排器在 workspace 首次 dispatch 前校验 `.cursor/skills/<skill>/SKILL.md` 存在
+- Dashboard 与 `deriveEffectivePhase` 共用 `workflow.phases[].produces` 映射（非硬编码文件名表）
+- `requires_pass: true` 且 `status: fail` 时 Dashboard 阶段显示「未通过」，issue 仍可续跑重试
 
 - `change_ref` = `kebab-case(issue.identifier)`，Symphony 展开 `{change_ref}` 占位符
 - 无 `workflow` 段时保持 **legacy prompt-only**（与旧 WORKFLOW 兼容）
@@ -87,8 +92,25 @@ for phase in workflow.phases（有序）:
 WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远程等）。Symphony 追加：
 
 - `effective_phase`
-- `/{handler}`
+- `/{skill}`（Prompt 中同时保留 legacy `handler` 行供 bundle skill 读取）
 - 展开后的 `produces` 路径
+- **`## Symphony Policy (V1.2)`** 横切硬约束（ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push）
+
+### V1.2 Skills 索引（白名单 7 个）
+
+由 `symphony-openspec-bundle` 的 `bootstrap/v12-skills.txt` 安装至 `.cursor/skills/`：
+
+| 类型 | Skill |
+|------|-------|
+| 横切 | `symphony-v1-policy`（查阅；硬约束由 Prompt Policy 段注入） |
+| clarify | `openspec-new-change` |
+| proposal_review | `openspec-proposal-review` |
+| plan | `openspec-continue-change` |
+| execute | `openspec-apply-change` |
+| verify | `openspec-verify` |
+| archive | `openspec-archive-change` |
+
+> 已移除：`openspec-propose`、`openspec-explore`、`symphony-*` V1.1 别名。
 
 ### 与 orchestrator 的边界
 
@@ -101,6 +123,16 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 ### symphony-openspec-bundle 协调
 
 独立仓需同步六产物路径与 skill 写文件约定，见 [symphony-workflow-v1-2-bundle-coordination.md](./symphony-workflow-v1-2-bundle-coordination.md)。
+
+### 多项目模式（跨服务需求）
+
+一个 issue 涉及多个业务仓时，见 **[multi-repo-workspace.md](./multi-repo-workspace.md)**：
+
+- **clarify**：宿主机 `codebase-memory-mcp` 只读分析，产出 `scope.json`；**不**在 `after_create` clone 业务仓
+- **proposal_review pass**：scope 冻结
+- **before_run**：按 catalog 物化 `repos/<repo_key>/`；symphony-ts 在 plan/execute dispatch 前可重复触发（review pass 后）
+- **编排门禁**：`proposal_review fail` → effective phase 回 `clarify`；多仓时 `scope.json` schema 与 `materialized` 硬门禁；workflow done 后释放 claimed
+- **skills**：`SYMPHONY_POLICY_ROOT/skills` symlink/junction 引用，非 per-workspace 拷贝；**likou 不是 Policy Root**
 
 ---
 
@@ -119,14 +151,20 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 
 ### Workspace：`after_create` 初始化（每个 issue workspace）
 
-每个新 workspace 在 **clone 与业务依赖安装之后**，由 `hooks.after_create` 完成 **OpenSpec 仓库级初始化**：
+**多项目模式（推荐）**：`after_create` **仅**搭建编排环境，**不** clone 业务仓。见 [multi-repo-workspace.md](./multi-repo-workspace.md)。
+
+**单仓 legacy 模式**：可在 `after_create` 先 `git clone` 业务仓再 bootstrap。
+
+每个新 workspace 由 `hooks.after_create` 完成 **OpenSpec 仓库级初始化**：
 
 1. `openspec --version`（校验宿主机已装 CLI，**不**执行 install）
 2. 若不存在 `openspec/config.yaml` → `openspec init --tools none`
-3. 设置 `SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle** 独立仓库根目录；`after_create` 调用 `bootstrap/install.sh`
-4. 自检：`test -f openspec/config.yaml`（失败则 hook 非 0 退出）
+3. 设置 `SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle**；调用 `bootstrap/install.sh`（默认 skills **symlink/junction**，非拷贝）
+4. 自检：`test -f openspec/config.yaml` 与 `.cursor/skills/openspec-new-change/SKILL.md`
 
 可复用片段：[docs/snippets/openspec-workspace-bootstrap.sh](./snippets/openspec-workspace-bootstrap.sh)
+
+业务仓物化见 [docs/snippets/materialize-repos.sh](./snippets/materialize-repos.sh)（`hooks.before_run`，plan 前）。
 
 若目标仓**已提交** `openspec/`，clone 后跳过 init 即可。
 
@@ -281,13 +319,13 @@ Checks:
 
 **不在 workpad 重复** Plan / AC / Validation 正文（权威在 openspec 制品）。
 
-### Skills 索引（V1.1）
+### Skills 索引（V1.1 Legacy）
 
-安装后全部位于 workspace `.cursor/skills/`（由 `symphony-openspec-bundle` 的 `bootstrap/install` 部署）：
+> **已废弃**：V1.2 请使用上文 [V1.2 Skills 索引](#v12-skills-索引白名单-7-个)。以下仅供历史 workspace 对照。
 
 | Phase | Skills |
 |-------|--------|
-| clarify | `symphony-clarify`、`openspec-explore`、`openspec-new-change` |
+| clarify | ~~`symphony-clarify`、`openspec-explore`~~、`openspec-new-change` |
 | proposal_review | `symphony-proposal-review` |
 | plan | `symphony-plan`、`openspec-continue-change` |
 | execute | `openspec-apply-change` |

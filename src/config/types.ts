@@ -108,7 +108,7 @@ export interface WorkflowArtifactStoreConfig {
 
 export interface WorkflowPhaseConfig {
   id: string;
-  handler: string;
+  skill: string;
   produces: string;
   requiresPass: boolean;
 }

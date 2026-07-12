@@ -12,9 +12,17 @@ import {
 } from "../../../domain/model.js";
 import { applyHarnessEventToSession } from "../../../logging/session-metrics.js";
 import type { StructuredLogger } from "../../../logging/structured-logger.js";
-import type { IssueTracker } from "../../../tracker/tracker.js";
 import { trackerStateMatches } from "../../../tracker/state-matching.js";
+import type { IssueTracker } from "../../../tracker/tracker.js";
+import { resolveChangeRef } from "../../../workflow/change-ref-path.js";
+import { ensureWorkflowSkillReady } from "../../../workflow/ensure-workflow-skill-ready.js";
+import {
+  InvalidWorkflowSkillError,
+  WorkspaceSkillMissingError,
+} from "../../../workflow/validate-workspace-skills.js";
+import { runMaterializationHookIfNeeded } from "../../../workflow/materialization-hook.js";
 import { resolveWorkflowDispatchContext } from "../../../workflow/workflow-dispatch.js";
+import { isWorkflowAllComplete } from "../../../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../../../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../../../workspace/path-safety.js";
 import { WorkspaceManager } from "../../../workspace/workspace-manager.js";
@@ -30,6 +38,7 @@ import type {
   HarnessTurnOutcome,
 } from "../../harness/types.js";
 import { buildTurnPrompt } from "../../prompt-builder.js";
+import { logAgentPromptBuilt } from "../../prompt-log.js";
 import { AgentRunnerError } from "../../runner.js";
 import {
   type CursorCliRunResult,
@@ -57,8 +66,6 @@ import {
   truncateForStructuredLog,
   writeCursorTurnArtifactHeader,
 } from "./cursor-turn-log.js";
-import { resolveChangeRef } from "../../../workflow/change-ref-path.js";
-import { isWorkflowAllComplete } from "../../../workflow/workflow-harness-stop.js";
 
 export class CursorAgentHarness implements AgentHarness {
   private config: ResolvedWorkflowConfig;
@@ -185,6 +192,12 @@ export class CursorAgentHarness implements AgentHarness {
         });
 
         runAttempt.status = "building_prompt";
+        await runMaterializationHookIfNeeded({
+          hooks: this.hooks,
+          workspacePath,
+          issueIdentifier: issue.identifier,
+          workflow: this.config.workflow,
+        });
         const prompt = await this.buildPromptForTurn({
           issue,
           attempt: input.attempt,
@@ -192,18 +205,27 @@ export class CursorAgentHarness implements AgentHarness {
           chatId,
           workspacePath,
         });
+        const cursorConfig = this.config.harnesses.cursor;
+        await logAgentPromptBuilt(this.logger, {
+          issue,
+          attempt: input.attempt,
+          workspacePath,
+          turnNumber,
+          prompt,
+          includeFullPrompt: cursorConfig.turnLogIncludePrompt,
+          maxBytes: cursorConfig.turnLogMaxBytes,
+        });
         const args = buildCursorCliArgs({
           workspace: workspacePath,
           prompt,
           chatId,
-          model: this.config.harnesses.cursor.model,
-          sandbox: this.config.harnesses.cursor.sandbox,
+          model: cursorConfig.model,
+          sandbox: cursorConfig.sandbox,
         });
 
         runAttempt.status =
           turnNumber === 1 ? "initializing_session" : "streaming_turn";
 
-        const cursorConfig = this.config.harnesses.cursor;
         if (
           this.logger !== null &&
           cursorConfig.sandbox !== undefined &&
@@ -443,6 +465,28 @@ export class CursorAgentHarness implements AgentHarness {
             workflow: this.config.workflow,
           });
 
+    try {
+      await ensureWorkflowSkillReady({
+        workspacePath: input.workspacePath,
+        workflowDispatch,
+      });
+    } catch (error) {
+      if (
+        error instanceof WorkspaceSkillMissingError ||
+        error instanceof InvalidWorkflowSkillError
+      ) {
+        await this.logger?.error("skill_missing", error.message, {
+          skill:
+            error instanceof WorkspaceSkillMissingError
+              ? error.skill
+              : error.skill,
+          workspace_path: input.workspacePath,
+          issue_identifier: input.issue.identifier,
+        });
+      }
+      throw error;
+    }
+
     return await buildTurnPrompt({
       workflow: {
         promptTemplate: this.config.promptTemplate,
@@ -457,7 +501,7 @@ export class CursorAgentHarness implements AgentHarness {
           : {
               changeRef: workflowDispatch.changeRef,
               effectivePhaseId: workflowDispatch.effectivePhaseId,
-              handler: workflowDispatch.handler,
+              skill: workflowDispatch.skill,
               producesPath: workflowDispatch.producesPath,
             },
     });

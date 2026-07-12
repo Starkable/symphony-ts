@@ -1,3 +1,4 @@
+import type { ResolvedPhaseManifest } from "../workflow/resolve-phase-manifest.js";
 import type { V1BusinessPhase, WorkflowArtifactEntry } from "./types.js";
 import type { ParsedWorkpad } from "./workpad-parser.js";
 
@@ -136,6 +137,25 @@ export function artifactsForPhaseV11(
     default:
       return [];
   }
+}
+
+export function artifactsForPhaseFromConfig(
+  phaseId: V1BusinessPhase,
+  manifest: ResolvedPhaseManifest,
+  openspecArtifacts: WorkflowArtifactEntry[],
+): WorkflowArtifactEntry[] {
+  const phaseEntry = manifest.phases.find((entry) => entry.id === phaseId);
+  if (phaseEntry === undefined) {
+    return artifactsForPhaseV12(phaseId, openspecArtifacts);
+  }
+
+  return openspecArtifacts
+    .filter(
+      (entry) =>
+        entry.name === phaseEntry.primaryArtifactName ||
+        entry.path.endsWith(`/${phaseEntry.primaryArtifactName}`),
+    )
+    .map(withDisplayName);
 }
 
 export function artifactsForPhaseV12(

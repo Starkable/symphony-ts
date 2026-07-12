@@ -1,14 +1,14 @@
-import type { RuntimeSnapshot } from "../logging/runtime-snapshot.js";
-import type {
-  WorkflowDetail,
-  WorkflowSummary,
-  WorkflowRuntimeSummary,
-} from "../artifact-store/types.js";
-import { V1_BUSINESS_PHASES, PHASE_LABELS } from "../artifact-store/types.js";
 import {
   formatGateLabel,
   formatRuntimeStatus,
 } from "../artifact-store/phase-artifacts.js";
+import type {
+  WorkflowDetail,
+  WorkflowRuntimeSummary,
+  WorkflowSummary,
+} from "../artifact-store/types.js";
+import { PHASE_LABELS, V1_BUSINESS_PHASES } from "../artifact-store/types.js";
+import type { RuntimeSnapshot } from "../logging/runtime-snapshot.js";
 import {
   escapeHtml,
   formatInteger,
@@ -61,6 +61,7 @@ const WORKFLOW_STYLES = String.raw`
   .status-badge { font-size:10px; font-weight:700; padding:.125rem .5rem; border-radius:999px; }
   .status-completed { background:#ecfdf5; color:#059669; border:1px solid #a7f3d0; }
   .status-in_progress { background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; }
+  .status-failed { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
   .status-pending { background:#f3f4f6; color:#9ca3af; border:1px solid #e5e7eb; }
   .artifact-row { display:flex; justify-content:space-between; gap:.75rem; padding:.5rem .75rem; background:#f9fafb; border-radius:.5rem; margin-top:.35rem; font-size:.75rem; }
   .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); align-items:center; justify-content:center; padding:1rem; z-index:50; }
@@ -316,15 +317,19 @@ function renderStageCard(
   const statusClass =
     phase.status === "completed"
       ? "status-completed"
-      : phase.status === "in_progress"
-        ? "status-in_progress"
-        : "status-pending";
+      : phase.status === "failed"
+        ? "status-failed"
+        : phase.status === "in_progress"
+          ? "status-in_progress"
+          : "status-pending";
   const statusLabel =
     phase.status === "completed"
       ? "已完成"
-      : phase.status === "in_progress"
-        ? "进行中"
-        : "待处理";
+      : phase.status === "failed"
+        ? "未通过"
+        : phase.status === "in_progress"
+          ? "进行中"
+          : "待处理";
   const artifacts = phase.artifacts
     .map(
       (artifact) => `
@@ -340,18 +345,19 @@ function renderStageCard(
 
   const executeSummary =
     phase.id === "execute" && phase.status !== "pending"
-      ? `<p style="font-size:.75rem;color:#6b7280;margin:0;">运行摘要：轮次 ${runtime.turn_count ?? "—"} · ${escapeHtml(formatRuntimeStatus(runtime.status))}${runtime.last_message ? ` · ${escapeHtml(runtime.last_message)}` : ""}</p>`
+      ? `<p style="font-size:.75rem;color:#6b7280;margin:${artifacts.length > 0 ? ".5rem 0 0" : "0"};">运行摘要：轮次 ${runtime.turn_count ?? "—"} · ${escapeHtml(formatRuntimeStatus(runtime.status))}${runtime.last_message ? ` · ${escapeHtml(runtime.last_message)}` : ""}</p>`
       : "";
 
   const bodyContent =
     phase.id === "execute"
-      ? executeSummary ||
-        '<p style="font-size:.75rem;color:#9ca3af;font-style:italic;margin:0;">执行阶段不展示文件列表</p>'
+      ? [artifacts, executeSummary].filter(Boolean).join("") ||
+        executeSummary ||
+        '<p style="font-size:.75rem;color:#9ca3af;font-style:italic;margin:0;">执行中</p>'
       : artifacts ||
         '<p style="font-size:.75rem;color:#9ca3af;font-style:italic;margin:0;">暂无产物</p>';
 
   return `<div class="stage-vertical" data-phase-id="${escapeHtml(phase.id)}">
-    <div class="stage-dot-col">${phase.status === "in_progress" ? '<div class="phase-dot active">▶</div>' : `<div class="phase-dot ${phase.status === "completed" ? "done" : "pending"}">${phase.status === "completed" ? "✓" : ""}</div>`}</div>
+    <div class="stage-dot-col">${phase.status === "in_progress" ? '<div class="phase-dot active">▶</div>' : phase.status === "failed" ? '<div class="phase-dot" style="background:#dc2626;">!</div>' : `<div class="phase-dot ${phase.status === "completed" ? "done" : "pending"}">${phase.status === "completed" ? "✓" : ""}</div>`}</div>
     <div class="card stage-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
         <strong>${escapeHtml(phase.label)}</strong>

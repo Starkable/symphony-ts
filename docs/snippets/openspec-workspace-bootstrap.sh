@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# OpenSpec workspace bootstrap — append after git clone and project install in hooks.after_create.
+# OpenSpec workspace bootstrap — 多项目模式 after_create 核心步骤（无业务 git clone）
 #
-# Prerequisites (manual, on Symphony host, once):
-#   - openspec CLI on PATH (openspec --version)
-#   - symphony-openspec-bundle cloned; SYMPHONY_POLICY_ROOT points at bundle root
-#   - Cursor agent CLI, symphony-ts, tracker credentials (see docs/symphony-agent-workflow.md)
+# Prerequisites（宿主机一次）:
+#   - openspec CLI on PATH
+#   - SYMPHONY_POLICY_ROOT → symphony-openspec-bundle
+#   - 多项目：SYMPHONY_REPO_ROOT、catalog、MCP 索引（见 docs/multi-repo-workspace.md）
 #
-# Runtime skills 来自独立仓 symphony-openspec-bundle，不从 symphony-ts 拷贝。
+# 分工:
+#   after_create  → 本脚本（openspec init + skills 引用）
+#   before_run    → docs/snippets/materialize-repos.sh（plan 前 clone repos/*）
+#   clarify       → MCP 读代码，不写 repos/
 
 set -euo pipefail
 
@@ -27,7 +30,12 @@ elif [ -n "${SYMPHONY_POLICY_ROOT:-}" ]; then
   echo "SYMPHONY_POLICY_ROOT set but bootstrap/install.sh not found: ${SYMPHONY_POLICY_ROOT}" >&2
   exit 1
 else
-  echo "[bootstrap] SYMPHONY_POLICY_ROOT 未设置，仅 openspec init，无 V1.1 定制 skills" >&2
+  echo "[bootstrap] SYMPHONY_POLICY_ROOT 未设置，仅 openspec init，无 Policy skills" >&2
 fi
 
-echo "openspec workspace bootstrap ok"
+if [ ! -f .cursor/skills/openspec-new-change/SKILL.md ]; then
+  echo "openspec workspace bootstrap failed: policy skills missing" >&2
+  exit 1
+fi
+
+echo "openspec workspace bootstrap ok (multi-repo: no business clone in after_create)"

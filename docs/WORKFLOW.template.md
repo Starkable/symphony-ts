@@ -388,23 +388,23 @@ hooks:
 
 verify Phase 以该段为命令权威来源。
 
-### V1 prompt 摘要（可嵌入 WORKFLOW body）
+### V1 prompt 摘要（Legacy V1.1 — 勿用于新 WORKFLOW）
 
 ```markdown
-Mode: v1-openspec
+Mode: v1-openspec（Legacy）
 ChangeRef = kebab-case({{ issue.identifier }})；仅 openspec/changes/<ChangeRef>/；禁止 AskUserQuestion 选 change。
 
-Phase（禁止跳步，V1.1）：clarify→proposal_review→plan→execute→verify→archive→done
-- clarify: openspec-explore
-- plan: openspec-ff-change
-- proposal_review: 自审 → REVIEW_REPORT
-- execute: openspec-apply-change
-- verify: tasks.md ## Validation → VERIFICATION_REPORT
-- archive: openspec-archive-change（不同步 main spec）
+V1.2 请使用 workflow.phases front matter + 7 白名单 skill（见 docs/symphony-agent-workflow.md）。
+勿使用 openspec-explore、openspec-ff-change、symphony-clarify 等已移除 skill。
+```
 
-C0 未过禁止改 src/tests；不可推断 → failed + CLARIFY_BLOCKED（不 blocked 等人）。
+### V1.2 prompt 摘要（推荐嵌入 WORKFLOW body）
 
-Skills（install 后均在 `.cursor/skills/`）: symphony-v1-policy, symphony-clarify, symphony-proposal-review, symphony-plan, symphony-verify, openspec-{explore,new-change,continue-change,apply-change,archive-change}
+```markdown
+ChangeRef = kebab-case({{ issue.identifier }})；仅 openspec/changes/<ChangeRef>/。
+Symphony 每 turn 注入 effective_phase、skill、produces 与 ## Symphony Policy (V1.2) — 按注入执行，勿在正文写 Phase 路由表。
+
+Skills（install 白名单）: symphony-v1-policy, openspec-{new-change,proposal-review,continue-change,apply-change,verify,archive-change}
 ```
 
 ---

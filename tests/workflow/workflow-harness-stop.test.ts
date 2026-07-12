@@ -13,19 +13,19 @@ import { isWorkflowAllComplete } from "../../src/workflow/workflow-harness-stop.
 const DEFAULT_PHASES: WorkflowPhaseConfig[] = [
   {
     id: "clarify",
-    handler: "openspec-new-change",
+    skill: "openspec-new-change",
     produces: "openspec/changes/{change_ref}/proposal.md",
     requiresPass: false,
   },
   {
     id: "proposal_review",
-    handler: "openspec-proposal-review",
+    skill: "openspec-proposal-review",
     produces: "openspec/changes/{change_ref}/proposal_review.md",
     requiresPass: true,
   },
   {
     id: "plan",
-    handler: "openspec-continue-change",
+    skill: "openspec-continue-change",
     produces: "openspec/changes/{change_ref}/tasks.md",
     requiresPass: false,
   },
@@ -60,7 +60,7 @@ async function writeRelative(
 function workflowConfig(
   phases: WorkflowPhaseConfig[],
 ): SymphonyWorkflowConfig {
-  return { phases };
+  return { version: "1.2", changeRefStrategy: null, phases };
 }
 
 describe("isWorkflowAllComplete", () => {

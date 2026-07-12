@@ -178,6 +178,10 @@ export class OrchestratorCore {
     }
 
     const allowClaimedIssueId = options?.allowClaimedIssueId;
+    if (this.state.completed.has(issue.id)) {
+      return false;
+    }
+
     if (
       this.state.claimed.has(issue.id) &&
       (allowClaimedIssueId === undefined || allowClaimedIssueId !== issue.id)
@@ -346,6 +350,7 @@ export class OrchestratorCore {
       const v12WorkflowEnabled =
         (this.config.workflow?.phases.length ?? 0) > 0;
       if (input.workflowComplete === true && v12WorkflowEnabled) {
+        this.releaseClaim(input.issueId);
         return null;
       }
       return this.scheduleRetry(input.issueId, 1, {

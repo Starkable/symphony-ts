@@ -14,19 +14,19 @@ describe("workflow-phases-parser", () => {
     expect(parseSymphonyWorkflowConfig({ version: "1.2" })).toBeNull();
   });
 
-  it("parses a valid workflow.phases table", () => {
+  it("parses a valid workflow.phases table with skill", () => {
     const parsed = parseSymphonyWorkflowConfig({
       version: "1.2",
       change_ref: "kebab_case_issue_id",
       phases: [
         {
           id: "clarify",
-          handler: "openspec-new-change",
+          skill: "openspec-new-change",
           produces: "openspec/changes/{change_ref}/proposal.md",
         },
         {
           id: "proposal_review",
-          handler: "openspec-proposal-review",
+          skill: "openspec-proposal-review",
           produces: "openspec/changes/{change_ref}/proposal_review.md",
           requires_pass: true,
         },
@@ -35,22 +35,43 @@ describe("workflow-phases-parser", () => {
 
     expect(parsed?.version).toBe("1.2");
     expect(parsed?.phases).toHaveLength(2);
+    expect(parsed?.phases[0]?.skill).toBe("openspec-new-change");
     expect(parsed?.phases[1]?.requiresPass).toBe(true);
   });
 
-  it("rejects duplicate phase ids and empty handler/produces", () => {
+  it("accepts legacy handler alias as skill", () => {
+    const parsed = parseSymphonyWorkflowConfig({
+      phases: [
+        {
+          id: "clarify",
+          handler: "openspec-new-change",
+          produces: "openspec/changes/{change_ref}/proposal.md",
+        },
+      ],
+    });
+
+    expect(parsed?.phases[0]?.skill).toBe("openspec-new-change");
+  });
+
+  it("rejects duplicate phase ids and empty skill/produces", () => {
     expect(() =>
       parseSymphonyWorkflowConfig({
         phases: [
-          { id: "clarify", handler: "a", produces: "p1" },
-          { id: "clarify", handler: "b", produces: "p2" },
+          { id: "clarify", skill: "a", produces: "p1" },
+          { id: "clarify", skill: "b", produces: "p2" },
         ],
       }),
     ).toThrow(WorkflowPhasesParseError);
 
     expect(() =>
       parseSymphonyWorkflowConfig({
-        phases: [{ id: "clarify", handler: "", produces: "p1" }],
+        phases: [{ id: "clarify", skill: "", produces: "p1" }],
+      }),
+    ).toThrow(WorkflowPhasesParseError);
+
+    expect(() =>
+      parseSymphonyWorkflowConfig({
+        phases: [{ id: "clarify", skill: "git push", produces: "p1" }],
       }),
     ).toThrow(WorkflowPhasesParseError);
   });
@@ -113,7 +134,7 @@ describe("workflow-phases-parser", () => {
         phases: [
           {
             id: "clarify",
-            handler: "openspec-new-change",
+            skill: "openspec-new-change",
             produces: "openspec/changes/{change_ref}/proposal.md",
             requiresPass: false,
           },
@@ -129,7 +150,7 @@ describe("workflow-phases-parser", () => {
         phases: [
           {
             id: "",
-            handler: "openspec-new-change",
+            skill: "openspec-new-change",
             produces: "x",
             requiresPass: false,
           },

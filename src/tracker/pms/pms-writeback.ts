@@ -66,7 +66,7 @@ export class PmsWritebackService {
     workspacePath: string;
     logger: StructuredLogger | null;
     workflow: SymphonyWorkflowConfig | null;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const workpadPath = join(input.workspacePath, ".symphony", "workpad.md");
     let workpadContent: string | null = null;
     try {
@@ -83,7 +83,7 @@ export class PmsWritebackService {
     });
 
     if (signal.kind === "none") {
-      return;
+      return false;
     }
 
     await this.executeSignal({
@@ -93,6 +93,11 @@ export class PmsWritebackService {
       logger: input.logger,
       signalSource: signal.source,
     });
+    return this.pending.has(input.issueKey);
+  }
+
+  hasPendingWriteback(issueKey: string): boolean {
+    return this.pending.has(issueKey);
   }
 
   async retryPending(logger: StructuredLogger | null): Promise<void> {

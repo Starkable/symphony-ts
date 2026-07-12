@@ -5,3 +5,9 @@ coverage/
 *.tgz
 
 .worktrees/
+/openspec/
+/.idea/encodings.xml
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/vcs.xml
+/.idea/symphony-ts.iml

@@ -1,5 +1,12 @@
+import type { SymphonyWorkflowConfig } from "../config/types.js";
+import type { PhaseCompletionSnapshot } from "../workflow/derive-effective-phase.js";
+import {
+  type ResolvedPhaseManifest,
+  resolvePhaseManifest,
+} from "../workflow/resolve-phase-manifest.js";
 import { toChangeRef } from "./change-ref.js";
 import {
+  artifactsForPhaseFromConfig,
   artifactsForPhaseV11,
   synthesizeReportArtifacts,
 } from "./phase-artifacts.js";
@@ -35,6 +42,8 @@ export function buildWorkflowManifest(input: {
   openspecArtifacts: WorkflowArtifactEntry[];
   logArtifacts: WorkflowArtifactEntry[];
   proofArtifacts: WorkflowArtifactEntry[];
+  workflow?: SymphonyWorkflowConfig | null;
+  phaseCompletions?: PhaseCompletionSnapshot[];
   now?: Date;
 }): WorkflowManifest {
   const now = (input.now ?? new Date()).toISOString();
@@ -42,12 +51,21 @@ export function buildWorkflowManifest(input: {
   const changeRef = workpad.changeRef ?? toChangeRef(input.issueIdentifier);
   const currentPhase = input.currentPhase ?? normalizePhase(workpad.phase);
   const synthesizedReports = synthesizeReportArtifacts(workpad);
+  const phaseManifest =
+    input.workflow !== null && input.workflow !== undefined
+      ? resolvePhaseManifest({
+          workflow: input.workflow,
+          changeRef,
+        })
+      : null;
   const phases = buildPhaseEntries({
     currentPhase,
     workpad,
     openspecArtifacts: input.openspecArtifacts,
     proofArtifacts: input.proofArtifacts,
     synthesizedReports,
+    phaseManifest,
+    phaseCompletions: input.phaseCompletions ?? [],
     now: input.now ?? new Date(),
   });
 
@@ -101,6 +119,8 @@ function buildPhaseEntries(input: {
   openspecArtifacts: WorkflowArtifactEntry[];
   proofArtifacts: WorkflowArtifactEntry[];
   synthesizedReports: WorkflowArtifactEntry[];
+  phaseManifest: ResolvedPhaseManifest | null;
+  phaseCompletions: PhaseCompletionSnapshot[];
   now: Date;
 }): WorkflowPhaseEntry[] {
   const currentIndex =
@@ -109,23 +129,67 @@ function buildPhaseEntries(input: {
       : V1_BUSINESS_PHASES.indexOf(input.currentPhase as V1BusinessPhase);
 
   return V1_BUSINESS_PHASES.map((phaseId, index) => {
-    const status = derivePhaseStatus(index, currentIndex, input.currentPhase);
+    const completion = input.phaseCompletions.find(
+      (entry) => entry.phaseId === phaseId,
+    );
+    const status =
+      input.phaseManifest !== null
+        ? derivePhaseStatusV12({
+            phaseIndex: index,
+            currentIndex,
+            currentPhase: input.currentPhase,
+            phaseFailed: completion?.failed ?? false,
+          })
+        : derivePhaseStatus(index, currentIndex, input.currentPhase);
     const gate = buildGate(phaseId, input.workpad);
+    const artifacts =
+      input.phaseManifest !== null
+        ? artifactsForPhaseFromConfig(
+            phaseId,
+            input.phaseManifest,
+            input.openspecArtifacts,
+          )
+        : artifactsForPhaseV11(phaseId, {
+            openspecArtifacts: input.openspecArtifacts,
+            proofArtifacts: input.proofArtifacts,
+            synthesizedReports: input.synthesizedReports,
+            workpad: input.workpad,
+          });
+
     return {
       id: phaseId,
       label: PHASE_LABELS[phaseId],
       status,
       gate,
-      artifacts: artifactsForPhaseV11(phaseId, {
-        openspecArtifacts: input.openspecArtifacts,
-        proofArtifacts: input.proofArtifacts,
-        synthesizedReports: input.synthesizedReports,
-        workpad: input.workpad,
-      }),
+      artifacts,
       started_at: derivePhaseStartedAt(phaseId, index, currentIndex, gate),
       completed_at: derivePhaseCompletedAt(status, gate, input.now),
     };
   });
+}
+
+function derivePhaseStatusV12(input: {
+  phaseIndex: number;
+  currentIndex: number;
+  currentPhase: V1PhaseId;
+  phaseFailed: boolean;
+}): PhaseStatus {
+  if (input.currentPhase === "done") {
+    return "completed";
+  }
+
+  if (input.phaseIndex < input.currentIndex) {
+    return "completed";
+  }
+
+  if (input.phaseIndex === input.currentIndex) {
+    if (input.phaseFailed) {
+      return "failed";
+    }
+    return "in_progress";
+  }
+
+  return "pending";
 }
 
 function derivePhaseStatus(

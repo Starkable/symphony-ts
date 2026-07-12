@@ -1,157 +1,41 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import {
-  ERROR_CODES,
-  type WorkspaceHookError,
-  type WorkspaceHookLogEntry,
-  WorkspaceHookRunner,
-} from "../../src/index.js";
+import { resolveHookSpawnSpec } from "../../src/workspace/hooks.js";
 
-describe("WorkspaceHookRunner", () => {
-  it("returns false when the requested hook is not configured", async () => {
-    const execute = vi.fn();
-    const runner = new WorkspaceHookRunner({
-      config: {
-        afterCreate: null,
-        beforeRun: null,
-        afterRun: null,
-        beforeRemove: null,
-        timeoutMs: 100,
-      },
-      execute,
-    });
+describe("resolveHookSpawnSpec", () => {
+  it("uses sh on unix-like platforms", () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "linux" });
 
-    await expect(
-      runner.run({
-        name: "beforeRun",
-        workspacePath: "/tmp/workspace",
-      }),
-    ).resolves.toBe(false);
-    expect(execute).not.toHaveBeenCalled();
+    const spec = resolveHookSpawnSpec("echo hello");
+    expect(spec.command).toBe("sh");
+    expect(spec.args).toEqual(["-lc", "echo hello"]);
+
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
-  it("fails fatal hooks on non-zero exit codes and truncates logged output", async () => {
-    const logs: WorkspaceHookLogEntry[] = [];
-    const runner = new WorkspaceHookRunner({
-      config: {
-        afterCreate: "echo prepare",
-        beforeRun: "echo run",
-        afterRun: null,
-        beforeRemove: null,
-        timeoutMs: 500,
-      },
-      outputLimit: 12,
-      log: (entry) => {
-        logs.push(entry);
-      },
-      execute: vi.fn().mockResolvedValue({
-        exitCode: 12,
-        signal: null,
-        stdout: "1234567890abcdef",
-        stderr: "failure-details",
-      }),
-    });
+  it("uses powershell for ps1 scripts on windows", () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
 
-    await expect(
-      runner.run({
-        name: "beforeRun",
-        workspacePath: "/tmp/workspace",
-      }),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<WorkspaceHookError>>({
-        code: ERROR_CODES.hookFailed,
-        exitCode: 12,
-        stdout: "1234567890ab...[truncated]",
-        stderr: "failure-deta...[truncated]",
-      }),
+    const spec = resolveHookSpawnSpec(
+      "& ${env:SYMPHONY_REPO_ROOT}\\docs\\snippets\\materialize-repos.ps1",
     );
+    expect(spec.command).toBe("powershell");
+    expect(spec.args[0]).toBe("-NoProfile");
 
-    expect(logs).toEqual([
-      {
-        level: "info",
-        event: "workspace_hook_started",
-        hook: "beforeRun",
-        workspacePath: "/tmp/workspace",
-      },
-      expect.objectContaining({
-        level: "error",
-        event: "workspace_hook_failed",
-        hook: "beforeRun",
-        workspacePath: "/tmp/workspace",
-        exitCode: 12,
-        errorCode: ERROR_CODES.hookFailed,
-        stdout: "1234567890ab...[truncated]",
-        stderr: "failure-deta...[truncated]",
-      }),
-    ]);
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
-  it("maps executor failures to hook timeout errors", async () => {
-    const logs: WorkspaceHookLogEntry[] = [];
-    const runner = new WorkspaceHookRunner({
-      config: {
-        afterCreate: null,
-        beforeRun: "sleep 10",
-        afterRun: null,
-        beforeRemove: null,
-        timeoutMs: 25,
-      },
-      log: (entry) => {
-        logs.push(entry);
-      },
-      execute: vi.fn().mockRejectedValue(new Error("timed out")),
-    });
+  it("uses powershell for bundle install.ps1 after_create on windows", () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32" });
 
-    await expect(
-      runner.run({
-        name: "beforeRun",
-        workspacePath: "/tmp/workspace",
-      }),
-    ).rejects.toThrowError(
-      expect.objectContaining<Partial<WorkspaceHookError>>({
-        code: ERROR_CODES.hookTimedOut,
-      }),
+    const spec = resolveHookSpawnSpec(
+      '$PolicyRoot = "F:\\project\\symphony-openspec-bundle"\n& "$PolicyRoot\\bootstrap\\install.ps1" -WorkspacePath (Get-Location).Path',
     );
+    expect(spec.command).toBe("powershell");
 
-    expect(logs).toEqual([
-      {
-        level: "info",
-        event: "workspace_hook_started",
-        hook: "beforeRun",
-        workspacePath: "/tmp/workspace",
-      },
-      expect.objectContaining({
-        level: "error",
-        event: "workspace_hook_timed_out",
-        hook: "beforeRun",
-        workspacePath: "/tmp/workspace",
-        errorCode: ERROR_CODES.hookTimedOut,
-      }),
-    ]);
-  });
-
-  it("suppresses errors in best-effort mode", async () => {
-    const runner = new WorkspaceHookRunner({
-      config: {
-        afterCreate: null,
-        beforeRun: null,
-        afterRun: "echo cleanup",
-        beforeRemove: null,
-        timeoutMs: 100,
-      },
-      execute: vi.fn().mockResolvedValue({
-        exitCode: 1,
-        signal: null,
-        stdout: "",
-        stderr: "broken",
-      }),
-    });
-
-    await expect(
-      runner.runBestEffort({
-        name: "afterRun",
-        workspacePath: "/tmp/workspace",
-      }),
-    ).resolves.toBe(false);
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 });

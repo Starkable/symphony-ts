@@ -18,8 +18,10 @@ import {
   normalizeIssueState,
 } from "../domain/model.js";
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
-import type { IssueTracker } from "../tracker/tracker.js";
 import { trackerStateMatches } from "../tracker/state-matching.js";
+import type { IssueTracker } from "../tracker/tracker.js";
+import { ensureWorkflowSkillReady } from "../workflow/ensure-workflow-skill-ready.js";
+import { runMaterializationHookIfNeeded } from "../workflow/materialization-hook.js";
 import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
 import { isWorkflowAllComplete } from "../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
@@ -233,6 +235,12 @@ export class AgentRunner {
           liveSession,
         });
         runAttempt.status = "building_prompt";
+        await runMaterializationHookIfNeeded({
+          hooks: this.hooks,
+          workspacePath,
+          issueIdentifier: issue.identifier,
+          workflow: this.config.workflow,
+        });
         const workflowDispatch =
           this.config.workflow === null
             ? null
@@ -241,6 +249,10 @@ export class AgentRunner {
                 issueIdentifier: issue.identifier,
                 workflow: this.config.workflow,
               });
+        await ensureWorkflowSkillReady({
+          workspacePath,
+          workflowDispatch,
+        });
         const prompt = await buildTurnPrompt({
           workflow: {
             promptTemplate: this.config.promptTemplate,
@@ -255,7 +267,7 @@ export class AgentRunner {
               : {
                   changeRef: workflowDispatch.changeRef,
                   effectivePhaseId: workflowDispatch.effectivePhaseId,
-                  handler: workflowDispatch.handler,
+                  skill: workflowDispatch.skill,
                   producesPath: workflowDispatch.producesPath,
                 },
         });

@@ -1,4 +1,5 @@
 import { ERROR_CODES } from "../errors/codes.js";
+import { validateSkillNameFormat } from "../workflow/validate-workspace-skills.js";
 import type { SymphonyWorkflowConfig, WorkflowPhaseConfig } from "./types.js";
 
 export class WorkflowPhasesParseError extends Error {
@@ -10,6 +11,8 @@ export class WorkflowPhasesParseError extends Error {
     this.code = ERROR_CODES.configInvalid;
   }
 }
+
+let handlerAliasDeprecationLogged = false;
 
 export function parseSymphonyWorkflowConfig(
   raw: unknown,
@@ -59,10 +62,11 @@ export function parseSymphonyWorkflowConfig(
     }
     seenIds.add(id);
 
-    const handler = readNonEmptyString(phaseRecord.handler);
-    if (handler === null) {
+    const skill = readPhaseSkill(phaseRecord, index);
+    const skillFormatError = validateSkillNameFormat(skill);
+    if (skillFormatError !== null) {
       throw new WorkflowPhasesParseError(
-        `workflow.phases[${index}].handler must be a non-empty string.`,
+        `workflow.phases[${index}].skill: ${skillFormatError}`,
       );
     }
 
@@ -75,7 +79,7 @@ export function parseSymphonyWorkflowConfig(
 
     phases.push({
       id,
-      handler,
+      skill,
       produces,
       requiresPass: readBoolean(phaseRecord.requires_pass) ?? false,
     });
@@ -101,14 +105,43 @@ export function validateSymphonyWorkflowConfig(
     if (phase.id.trim() === "") {
       return "workflow phase id must be non-empty.";
     }
-    if (phase.handler.trim() === "") {
-      return "workflow phase handler must be non-empty.";
+    const skillError = validateSkillNameFormat(phase.skill ?? "");
+    if (skillError !== null) {
+      return skillError;
+    }
+    if ((phase.skill ?? "").trim() === "") {
+      return "workflow phase skill must be non-empty.";
     }
     if (phase.produces.trim() === "") {
       return "workflow phase produces must be non-empty.";
     }
   }
   return null;
+}
+
+function readPhaseSkill(
+  phaseRecord: Record<string, unknown>,
+  index: number,
+): string {
+  const skill = readNonEmptyString(phaseRecord.skill);
+  if (skill !== null) {
+    return skill;
+  }
+
+  const handler = readNonEmptyString(phaseRecord.handler);
+  if (handler !== null) {
+    if (!handlerAliasDeprecationLogged) {
+      handlerAliasDeprecationLogged = true;
+      console.warn(
+        "[symphony] workflow.phases[].handler is deprecated; use skill instead.",
+      );
+    }
+    return handler;
+  }
+
+  throw new WorkflowPhasesParseError(
+    `workflow.phases[${index}].skill must be a non-empty string.`,
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

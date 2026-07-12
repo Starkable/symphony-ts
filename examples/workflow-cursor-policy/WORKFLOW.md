@@ -36,31 +36,31 @@ agent:
   max_concurrent_agents: 3
   max_turns: 25
 
-# V1.2 artifact-driven workflow (optional; omit for legacy prompt-only)
+# V1.2 artifact-driven workflow（编排仅 dispatch skill；步骤规则在 skill 内）
 workflow:
   version: "1.2"
   change_ref: kebab_case_issue_id
   phases:
     - id: clarify
-      handler: openspec-new-change
+      skill: openspec-new-change
       produces: openspec/changes/{change_ref}/proposal.md
     - id: proposal_review
-      handler: openspec-proposal-review
+      skill: openspec-proposal-review
       produces: openspec/changes/{change_ref}/proposal_review.md
       requires_pass: true
     - id: plan
-      handler: openspec-continue-change
+      skill: openspec-continue-change
       produces: openspec/changes/{change_ref}/tasks.md
     - id: execute
-      handler: openspec-apply-change
+      skill: openspec-apply-change
       produces: openspec/changes/{change_ref}/execute.md
       requires_pass: true
     - id: verify
-      handler: openspec-verify
+      skill: openspec-verify
       produces: openspec/changes/{change_ref}/verification.md
       requires_pass: true
     - id: archive
-      handler: openspec-archive-change
+      skill: openspec-archive-change
       produces: openspec/changes/{change_ref}/archive.md
       requires_pass: true
 
@@ -92,10 +92,10 @@ server:
 
 ## 规则
 
-1. 按 Symphony 注入的 `effective_phase`、`/{handler}`、`produces` 路径执行本 turn 唯一动作
-2. 阶段进度以 **产物文件** 为准，不维护 workpad Phase
+1. 按 Symphony 每 turn 注入的 `effective_phase`、`/{skill}`、`produces` 执行唯一动作
+2. 阶段进度以 **产物文件** 为准；步骤细则见对应 Cursor Skill
 3. `requires_pass` 阶段须在产物 front matter 写 `status: pass` 后才算完成
-4. 禁止未授权 git push；Validation 命令见 `tasks.md` 末尾 `## Validation`
+4. 禁止未授权 git push
 
 ## Skills
 

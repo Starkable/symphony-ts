@@ -45,7 +45,7 @@ export interface RenderPromptInput {
 
 export interface WorkflowDispatchInjection {
   effectivePhaseId: string;
-  handler: string;
+  skill: string;
   producesPath: string;
   changeRef: string;
 }
@@ -100,10 +100,22 @@ export async function buildTurnPrompt(
   return appendWorkflowDispatchSection(basePrompt, input.workflowDispatch);
 }
 
+export function buildSymphonyPolicySection(changeRef: string): string {
+  return [
+    "## Symphony Policy (V1.2)",
+    `- 仅操作 openspec/changes/${changeRef}/`,
+    "- 禁止 AskUserQuestion 选择 change 或阻塞性确认",
+    "- 只执行当前 effective_phase 对应 skill；禁止跳步",
+    "- 禁止未授权 git push",
+  ].join("\n");
+}
+
 export function appendWorkflowDispatchSection(
   basePrompt: string,
   dispatch: WorkflowDispatchInjection,
 ): string {
+  const policySection = buildSymphonyPolicySection(dispatch.changeRef);
+
   if (dispatch.effectivePhaseId === "done") {
     return [
       basePrompt,
@@ -112,12 +124,14 @@ export function appendWorkflowDispatchSection(
       `- change_ref: ${dispatch.changeRef}`,
       "- effective_phase: done",
       "- All workflow artifacts are complete.",
+      "",
+      policySection,
     ].join("\n");
   }
 
-  const handlerCommand = dispatch.handler.startsWith("/")
-    ? dispatch.handler
-    : `/${dispatch.handler}`;
+  const skillCommand = dispatch.skill.startsWith("/")
+    ? dispatch.skill
+    : `/${dispatch.skill}`;
 
   return [
     basePrompt,
@@ -125,10 +139,13 @@ export function appendWorkflowDispatchSection(
     "## Symphony Workflow (V1.2)",
     `- change_ref: ${dispatch.changeRef}`,
     `- effective_phase: ${dispatch.effectivePhaseId}`,
-    `- handler: ${handlerCommand}`,
+    `- skill: ${skillCommand}`,
+    `- handler: ${skillCommand}`,
     `- produces: ${dispatch.producesPath}`,
     "",
-    `Run ${handlerCommand} for this phase and write the artifact to ${dispatch.producesPath}.`,
+    `Run ${skillCommand} for this phase and write the artifact to ${dispatch.producesPath}.`,
+    "",
+    policySection,
   ].join("\n");
 }
 

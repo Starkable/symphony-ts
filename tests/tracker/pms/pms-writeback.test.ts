@@ -4,20 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { WorkflowPhaseConfig } from "../../src/config/types.js";
+import type { WorkflowPhaseConfig } from "../../../src/config/types.js";
 import { PmsTrackerClient } from "../../../src/tracker/pms/pms-client.js";
 import { PmsWritebackService } from "../../../src/tracker/pms/pms-writeback.js";
 
 const V12_DONE_PHASES: WorkflowPhaseConfig[] = [
   {
     id: "clarify",
-    handler: "openspec-new-change",
+    skill: "openspec-new-change",
     produces: "openspec/changes/{change_ref}/proposal.md",
     requiresPass: false,
   },
   {
     id: "archive",
-    handler: "openspec-archive-change",
+    skill: "openspec-archive-change",
     produces: "openspec/changes/{change_ref}/archive.md",
     requiresPass: true,
   },
@@ -96,12 +96,12 @@ describe("pms-writeback", () => {
 
     await service.processWorkpadSignal({
       issueKey: "BCS-1",
-      issueState: "进行中",
+      issueState: "\u8fdb\u884c\u4e2d",
       workspacePath,
       logger: null,
     });
 
-    expect(transition).toHaveBeenCalledWith("BCS-1", "开发暂停");
+    expect(transition).toHaveBeenCalledWith("BCS-1", "\u5f00\u53d1\u6682\u505c");
     expect(comment).toHaveBeenCalled();
   });
 
@@ -125,7 +125,7 @@ describe("pms-writeback", () => {
 
     await service.processWorkpadSignal({
       issueKey: "BCS-2",
-      issueState: "进行中",
+      issueState: "\u8fdb\u884c\u4e2d",
       workspacePath,
       logger: null,
     });
@@ -172,7 +172,7 @@ describe("pms-writeback", () => {
 
     await service.processCompletionSignal({
       issueKey: "BCS-496",
-      issueState: "进行中",
+      issueState: "\u8fdb\u884c\u4e2d",
       workspacePath,
       logger: null,
       workflow: {
@@ -182,10 +182,10 @@ describe("pms-writeback", () => {
       },
     });
 
-    expect(transition).toHaveBeenCalledWith("BCS-496", "已提测");
+    expect(transition).toHaveBeenCalledWith("BCS-496", "\u5df2\u63d0\u6d4b");
   });
 
-  it("skips done transition when issue is already 已提测", async () => {
+  it("skips done transition when issue is already done", async () => {
     const transition = vi.fn(async () => ({
       ok: true,
       status: 204,
@@ -207,7 +207,7 @@ describe("pms-writeback", () => {
 
     await service.processCompletionSignal({
       issueKey: "BCS-3",
-      issueState: "已提测",
+      issueState: "\u5df2\u63d0\u6d4b",
       workspacePath,
       logger: null,
       workflow: null,

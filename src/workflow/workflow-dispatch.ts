@@ -5,7 +5,7 @@ import { deriveEffectivePhase } from "./derive-effective-phase.js";
 export interface WorkflowDispatchContext {
   changeRef: string;
   effectivePhaseId: string;
-  handler: string;
+  skill: string;
   producesPath: string;
   allComplete: boolean;
 }
@@ -20,13 +20,14 @@ export async function resolveWorkflowDispatchContext(input: {
     workspacePath: input.workspacePath,
     changeRef,
     phases: input.workflow.phases,
+    workflow: input.workflow,
   });
 
   if (derived.allComplete || derived.effectivePhase === null) {
     return {
       changeRef,
       effectivePhaseId: "done",
-      handler: "",
+      skill: "",
       producesPath: "",
       allComplete: true,
     };
@@ -36,7 +37,7 @@ export async function resolveWorkflowDispatchContext(input: {
   return {
     changeRef,
     effectivePhaseId: phase.id,
-    handler: phase.handler,
+    skill: phase.skill,
     producesPath: expandChangeRefPath(phase.produces, changeRef),
     allComplete: false,
   };

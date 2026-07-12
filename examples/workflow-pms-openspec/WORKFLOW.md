@@ -22,18 +22,54 @@ workspace:
 
 hooks:
   after_create: |
-    git clone --depth 1 'https://github.com/your-org/your-repo.git' .
-    pnpm install
     openspec --version
     if [ ! -f openspec/config.yaml ]; then
       openspec init --tools none
     fi
+    if [ -n "${SYMPHONY_POLICY_ROOT:-}" ]; then
+      bash "${SYMPHONY_POLICY_ROOT}/bootstrap/install.sh" "$(pwd)"
+    fi
     test -f openspec/config.yaml
+    test -f .cursor/skills/openspec-new-change/SKILL.md
+  before_run: |
+    if [ -n "${SYMPHONY_REPO_ROOT:-}" ] && [ -f "${SYMPHONY_REPO_ROOT}/docs/snippets/materialize-repos.sh" ]; then
+      bash "${SYMPHONY_REPO_ROOT}/docs/snippets/materialize-repos.sh"
+    fi
+  # Windows 宿主机可改用：
+  # before_run: |
+  #   if ($env:SYMPHONY_REPO_ROOT) { & "$env:SYMPHONY_REPO_ROOT\docs\snippets\materialize-repos.ps1" }
 
 agent:
   harness: cursor
   max_concurrent_agents: 2
   max_turns: 25
+
+workflow:
+  version: "1.2"
+  change_ref: kebab_case_issue_id
+  phases:
+    - id: clarify
+      skill: openspec-new-change
+      produces: openspec/changes/{change_ref}/proposal.md
+    - id: proposal_review
+      skill: openspec-proposal-review
+      produces: openspec/changes/{change_ref}/proposal_review.md
+      requires_pass: true
+    - id: plan
+      skill: openspec-continue-change
+      produces: openspec/changes/{change_ref}/tasks.md
+    - id: execute
+      skill: openspec-apply-change
+      produces: openspec/changes/{change_ref}/execute.md
+      requires_pass: true
+    - id: verify
+      skill: openspec-verify
+      produces: openspec/changes/{change_ref}/verification.md
+      requires_pass: true
+    - id: archive
+      skill: openspec-archive-change
+      produces: openspec/changes/{change_ref}/archive.md
+      requires_pass: true
 
 harnesses:
   cursor:
@@ -45,15 +81,25 @@ harnesses:
 
 你正在处理 PMS 工作项 {{ issue.identifier }}：{{ issue.title }}。
 
-{% if attempt %}
-续跑：第 {{ attempt }} 次；从 `.symphony/workpad.md` 的 Phase 继续。
+## 工单描述（PMS）
+
+{% if issue.description %}
+{{ issue.description }}
+{% else %}
+（PMS 描述为空；请结合本 prompt 末尾「PMS 备注」节与 proposal 假设章节补充需求背景。）
 {% endif %}
 
-**Mode: v1-openspec** — Policy 见 `docs/symphony-agent-workflow.md`；PMS 配置见 `docs/pms-tracker.md`。
+{% if attempt %}
+续跑：第 {{ attempt }} 次 worker 续派。
+{% endif %}
+
+**Mode: v1.2-openspec-multi-repo** — 多项目编排见 `docs/multi-repo-workspace.md`；Policy 见 `docs/symphony-agent-workflow.md`。
 
 ## Tracker 说明
 
-- Symphony **只读** PMS；澄清与报告写入 workpad / openspec，**不会**同步到 PMS 评论
+- clarify / plan 须以**工单描述**（见上）与 **PMS 历史备注**为需求来源
+- 备注由 orchestrator 在本 prompt **末尾**自动追加 `## PMS 备注` 节（poll 时读取，默认最近 10 条）；若该节缺失表示工单无评论或读评论失败
+- Symphony **只读** PMS；产物写入 openspec change 目录，**不会**同步到 PMS 评论
 - 字段对照：`docs/pms-field-mapping.md`
 
 ## ChangeRef
@@ -61,27 +107,12 @@ harnesses:
 - `ChangeRef` = `{{ issue.identifier }}` 的 kebab-case（例 `BCS-1234` → `bcs-1234`）
 - 仅 `openspec/changes/<ChangeRef>/`；**禁止** AskUserQuestion 选 change
 
-## 首要动作
+## 规则
 
-1. 读/初始化 workpad（`Mode: v1-openspec`）
-2. 按 Phase 执行唯一允许动作（**禁止跳步**）
-3. 更新 Gate Log
-
-## Phase 路由（V1.1）
-
-| Phase | Skill / 动作 |
-|-------|----------------|
-| clarify | 写 `proposal.md`（策略包 `symphony-clarify`） |
-| proposal_review | 评审报告 + `REVIEW_REPORT` |
-| plan | `openspec-continue-change` 至 tasks |
-| execute | `openspec-apply-change` |
-| verify | `tasks.md ## Validation` → `VERIFICATION_REPORT` |
-| archive | `openspec-archive-change` + 归档说明 |
-| done | 结束 |
-
-C0 未过禁止改代码；不可推断 → `failed` + `CLARIFY_BLOCKED`。
+1. 按 Symphony 注入的 `effective_phase`、`/{skill}`、`produces` 执行本 turn 唯一动作
+2. clarify 用 MCP 分析跨项目 scope；业务代码在 `repos/<repo_key>/`（物化后）
+3. 禁止未授权 git push
 
 ## Skills
 
-`SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle** 独立仓库；`bootstrap/install.sh` 部署全部 skills。  
-`.cursor/skills/` 含 openspec-* 与 symphony-*（install 后）。
+`SYMPHONY_POLICY_ROOT` → **symphony-openspec-bundle**；`install.sh` 以 symlink/junction **引用** skills，非拷贝。

@@ -4,6 +4,7 @@ import {
   DEFAULT_WORKFLOW_PROMPT,
   appendWorkflowDispatchSection,
   buildContinuationPrompt,
+  buildSymphonyPolicySection,
   buildTurnPrompt,
   getEffectivePromptTemplate,
   renderPrompt,
@@ -201,26 +202,39 @@ describe("prompt builder", () => {
       workflowDispatch: {
         changeRef: "abc-123",
         effectivePhaseId: "plan",
-        handler: "openspec-continue-change",
+        skill: "openspec-continue-change",
         producesPath: "openspec/changes/abc-123/tasks.md",
       },
     });
 
     expect(prompt).toContain("Continue working on issue ABC-123");
     expect(prompt).toContain("effective_phase: plan");
-    expect(prompt).toContain("/openspec-continue-change");
+    expect(prompt).toContain("- skill: /openspec-continue-change");
     expect(prompt).toContain("openspec/changes/abc-123/tasks.md");
+    expect(prompt).toContain("## Symphony Policy (V1.2)");
+    expect(prompt).toContain("禁止 AskUserQuestion");
+    expect(prompt).toContain("openspec/changes/abc-123/");
   });
 
-  it("builds done-state workflow dispatch section", () => {
+  it("builds done-state workflow dispatch section with policy", () => {
     const prompt = appendWorkflowDispatchSection("Base", {
       changeRef: "abc-123",
       effectivePhaseId: "done",
-      handler: "",
+      skill: "",
       producesPath: "",
     });
 
     expect(prompt).toContain("effective_phase: done");
     expect(prompt).toContain("All workflow artifacts are complete");
+    expect(prompt).toContain("## Symphony Policy (V1.2)");
+    expect(prompt).toContain("禁止跳步");
+  });
+
+  it("builds policy section with change ref path constraint", () => {
+    const policy = buildSymphonyPolicySection("my-change");
+
+    expect(policy).toContain("## Symphony Policy (V1.2)");
+    expect(policy).toContain("openspec/changes/my-change/");
+    expect(policy).toContain("禁止未授权 git push");
   });
 });

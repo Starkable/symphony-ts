@@ -193,12 +193,41 @@ export class WorkspaceHookRunner {
   }
 }
 
+export interface HookSpawnSpec {
+  command: string;
+  args: string[];
+}
+
+export function resolveHookSpawnSpec(script: string): HookSpawnSpec {
+  const trimmed = script.trim();
+  if (process.platform === "win32") {
+    if (
+      process.env.SYMPHONY_HOOK_SHELL === "powershell" ||
+      /\.ps1\b/i.test(trimmed) ||
+      trimmed.includes("install.ps1") ||
+      trimmed.includes("Get-Location") ||
+      /^\s*\$PolicyRoot\s*=/m.test(trimmed)
+    ) {
+      return {
+        command: "powershell",
+        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      };
+    }
+  }
+
+  return {
+    command: "sh",
+    args: ["-lc", script],
+  };
+}
+
 export async function executeShellHook(
   script: string,
   options: { cwd: string; timeoutMs: number },
 ): Promise<HookCommandResult> {
+  const spawnSpec = resolveHookSpawnSpec(script);
   return await new Promise<HookCommandResult>((resolve, reject) => {
-    const child = spawn("sh", ["-lc", script], {
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: options.cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });

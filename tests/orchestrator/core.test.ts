@@ -212,7 +212,7 @@ describe("orchestrator core", () => {
           phases: [
             {
               id: "clarify",
-              handler: "openspec-new-change",
+              skill: "openspec-new-change",
               produces: "openspec/changes/{change_ref}/proposal.md",
               requiresPass: false,
             },

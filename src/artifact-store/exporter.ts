@@ -1,4 +1,11 @@
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import type { SymphonyWorkflowConfig } from "../config/types.js";
@@ -71,35 +78,28 @@ export class WorkflowExporter {
     let currentPhase:
       | Awaited<ReturnType<typeof deriveEffectivePhase>>["currentPhase"]
       | undefined;
+    let phaseCompletions:
+      | Awaited<ReturnType<typeof deriveEffectivePhase>>["phaseCompletions"]
+      | undefined;
     if (input.workflow !== null && input.workflow !== undefined) {
       const derived = await deriveEffectivePhase({
         workspacePath: input.workspacePath,
         changeRef,
         phases: input.workflow.phases,
+        workflow: input.workflow,
       });
       currentPhase = derived.currentPhase;
+      phaseCompletions = derived.phaseCompletions;
     }
 
     await this.#copyLogs(input.workspacePath, input.issue.identifier);
     await this.#copyWorkflowProofs(input.workspacePath, input.issue.identifier);
 
-    const openspecSource = join(
-      input.workspacePath,
-      "openspec",
-      "changes",
+    await this.#copyOpenspecChangeTree({
+      workspacePath: input.workspacePath,
+      issueIdentifier: input.issue.identifier,
       changeRef,
-    );
-    const openspecTarget = join(
-      this.#store.resolveIssuePath(input.issue.identifier),
-      "openspec",
-      "changes",
-      changeRef,
-    );
-    await mkdir(join(openspecTarget, ".."), { recursive: true });
-    await cp(openspecSource, openspecTarget, {
-      force: true,
-      recursive: true,
-    }).catch(() => undefined);
+    });
 
     const openspecArtifacts = await scanOpenspecChangeArtifacts({
       workspacePath: input.workspacePath,
@@ -116,6 +116,8 @@ export class WorkflowExporter {
       issueIdentifier: input.issue.identifier,
       workpad,
       ...(currentPhase !== undefined ? { currentPhase } : {}),
+      ...(phaseCompletions !== undefined ? { phaseCompletions } : {}),
+      ...(input.workflow !== undefined ? { workflow: input.workflow } : {}),
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
       runtime: runtimeFromRunning(input.running),
       openspecArtifacts: remapArtifactsForStore(
@@ -188,6 +190,64 @@ export class WorkflowExporter {
 
     await this.exportIssue(input);
     return { exported: true };
+  }
+
+  async #copyOpenspecChangeTree(input: {
+    workspacePath: string;
+    issueIdentifier: string;
+    changeRef: string;
+  }): Promise<void> {
+    const openspecTargetRoot = join(
+      this.#store.resolveIssuePath(input.issueIdentifier),
+      "openspec",
+      "changes",
+    );
+    await mkdir(openspecTargetRoot, { recursive: true });
+
+    const activeSource = join(
+      input.workspacePath,
+      "openspec",
+      "changes",
+      input.changeRef,
+    );
+    const activeTarget = join(openspecTargetRoot, input.changeRef);
+
+    let activeCopied = false;
+    try {
+      const activeInfo = await stat(activeSource);
+      if (activeInfo.isDirectory()) {
+        await cp(activeSource, activeTarget, { force: true, recursive: true });
+        activeCopied = true;
+      }
+    } catch {
+      activeCopied = false;
+    }
+
+    if (activeCopied) {
+      return;
+    }
+
+    const archivedDirName = await findLatestArchivedChangeDir(
+      input.workspacePath,
+      input.changeRef,
+    );
+    if (archivedDirName === null) {
+      return;
+    }
+
+    const archivedSource = join(
+      input.workspacePath,
+      "openspec",
+      "changes",
+      "archive",
+      archivedDirName,
+    );
+    const archivedTarget = join(openspecTargetRoot, "archive", archivedDirName);
+    await mkdir(join(archivedTarget, ".."), { recursive: true });
+    await cp(archivedSource, archivedTarget, {
+      force: true,
+      recursive: true,
+    }).catch(() => undefined);
   }
 
   async #copyLogs(
@@ -274,8 +334,48 @@ function remapArtifactsForStore(
 ): typeof artifacts {
   return artifacts.map((entry) => ({
     ...entry,
-    path: `openspec/changes/${changeRef}/${entry.name}`,
+    path: entry.path.startsWith("openspec/")
+      ? entry.path
+      : `openspec/changes/${changeRef}/${entry.name}`,
   }));
+}
+
+async function findLatestArchivedChangeDir(
+  workspacePath: string,
+  changeRef: string,
+): Promise<string | null> {
+  const archiveRoot = join(workspacePath, "openspec", "changes", "archive");
+  const suffix = `-${changeRef}`;
+
+  try {
+    const entries = await readdir(archiveRoot, { withFileTypes: true });
+    const matches: Array<{ name: string; mtimeMs: number }> = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.endsWith(suffix)) {
+        continue;
+      }
+      const dirPath = join(archiveRoot, entry.name);
+      const info = await stat(dirPath);
+      matches.push({ name: entry.name, mtimeMs: info.mtimeMs });
+    }
+
+    if (matches.length === 0) {
+      return null;
+    }
+
+    matches.sort((left, right) => {
+      const byName = right.name.localeCompare(left.name);
+      if (byName !== 0) {
+        return byName;
+      }
+      return right.mtimeMs - left.mtimeMs;
+    });
+
+    return matches[0]?.name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function remapLogArtifacts(
