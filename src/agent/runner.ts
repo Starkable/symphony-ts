@@ -20,17 +20,15 @@ import {
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import { trackerStateMatches } from "../tracker/state-matching.js";
 import type { IssueTracker } from "../tracker/tracker.js";
-import { ensureWorkflowSkillReady } from "../workflow/ensure-workflow-skill-ready.js";
+import { resolveWorkflowSkillPayload } from "../workflow/ensure-workflow-skill-ready.js";
 import { runMaterializationHookIfNeeded } from "../workflow/materialization-hook.js";
 import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
 import { isWorkflowAllComplete } from "../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../workspace/path-safety.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
-import {
-  type BuildTurnPromptInput,
-  buildTurnPrompt,
-} from "./prompt-builder.js";
+import { buildTurnPrompt } from "./prompt-builder.js";
+export type { BuildTurnPromptInput } from "./prompt-builder.js";
 
 export interface AgentRunnerEvent extends CodexClientEvent {
   issueId: string;
@@ -249,7 +247,7 @@ export class AgentRunner {
                 issueIdentifier: issue.identifier,
                 workflow: this.config.workflow,
               });
-        await ensureWorkflowSkillReady({
+        const skillPayload = await resolveWorkflowSkillPayload({
           workspacePath,
           workflowDispatch,
         });
@@ -269,6 +267,7 @@ export class AgentRunner {
                   effectivePhaseId: workflowDispatch.effectivePhaseId,
                   skill: workflowDispatch.skill,
                   producesPath: workflowDispatch.producesPath,
+                  skillPayload,
                 },
         });
         const title = `${issue.identifier}: ${issue.title}`;
@@ -575,5 +574,3 @@ function toAbortMessage(reason: unknown): string {
 
   return "Agent run cancelled.";
 }
-
-export type { BuildTurnPromptInput };

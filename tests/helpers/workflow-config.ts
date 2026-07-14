@@ -1,4 +1,9 @@
 import {
+  DEFAULT_CLAUDE_COMMAND,
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_CLAUDE_PERMISSION_MODE,
+  DEFAULT_CLAUDE_REUSE_POLICY,
+  DEFAULT_CLAUDE_TURN_TIMEOUT_MS,
   DEFAULT_CURSOR_COMMAND,
   DEFAULT_CURSOR_MODE,
   DEFAULT_CURSOR_MODEL,
@@ -14,6 +19,7 @@ import type {
   ResolvedWorkflowConfig,
   SymphonyWorkflowConfig,
   WorkflowAgentConfig,
+  WorkflowClaudeHarnessConfig,
   WorkflowCodexConfig,
   WorkflowHarnessesConfig,
 } from "../../src/config/types.js";
@@ -41,6 +47,15 @@ export const DEFAULT_TEST_CURSOR_CONFIG: WorkflowHarnessesConfig["cursor"] = {
   turnLogWorkspaceArtifact: DEFAULT_CURSOR_TURN_LOG_WORKSPACE_ARTIFACT,
 };
 
+export const DEFAULT_TEST_CLAUDE_CONFIG: WorkflowClaudeHarnessConfig = {
+  command: DEFAULT_CLAUDE_COMMAND,
+  model: DEFAULT_CLAUDE_MODEL,
+  permissionMode: DEFAULT_CLAUDE_PERMISSION_MODE,
+  allowedTools: null,
+  reusePolicy: DEFAULT_CLAUDE_REUSE_POLICY,
+  turnTimeoutMs: DEFAULT_CLAUDE_TURN_TIMEOUT_MS,
+};
+
 export function withHarnessConfig(
   config: Omit<ResolvedWorkflowConfig, "harnesses" | "agent" | "workflow"> & {
     agent: Omit<WorkflowAgentConfig, "harness"> & {
@@ -62,6 +77,10 @@ export function withHarnessConfig(
       cursor: {
         ...DEFAULT_TEST_CURSOR_CONFIG,
         ...config.harnesses?.cursor,
+      },
+      claude: {
+        ...DEFAULT_TEST_CLAUDE_CONFIG,
+        ...config.harnesses?.claude,
       },
     },
     codex,

@@ -12,8 +12,6 @@ export class WorkflowPhasesParseError extends Error {
   }
 }
 
-let handlerAliasDeprecationLogged = false;
-
 export function parseSymphonyWorkflowConfig(
   raw: unknown,
 ): SymphonyWorkflowConfig | null {
@@ -128,15 +126,10 @@ function readPhaseSkill(
     return skill;
   }
 
-  const handler = readNonEmptyString(phaseRecord.handler);
-  if (handler !== null) {
-    if (!handlerAliasDeprecationLogged) {
-      handlerAliasDeprecationLogged = true;
-      console.warn(
-        "[symphony] workflow.phases[].handler is deprecated; use skill instead.",
-      );
-    }
-    return handler;
+  if (readNonEmptyString(phaseRecord.handler) !== null) {
+    throw new WorkflowPhasesParseError(
+      `workflow.phases[${index}].handler is no longer supported; use skill with an Agent skill id.`,
+    );
   }
 
   throw new WorkflowPhasesParseError(

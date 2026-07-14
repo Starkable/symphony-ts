@@ -30,7 +30,7 @@ hooks:
       bash "${SYMPHONY_POLICY_ROOT}/bootstrap/install.sh" "$(pwd)"
     fi
     test -f openspec/config.yaml
-    test -f .cursor/skills/openspec-new-change/SKILL.md
+    test -f .agents/skills/openspec-new-change/SKILL.md
   before_run: |
     if [ -n "${SYMPHONY_REPO_ROOT:-}" ] && [ -f "${SYMPHONY_REPO_ROOT}/docs/snippets/materialize-repos.sh" ]; then
       bash "${SYMPHONY_REPO_ROOT}/docs/snippets/materialize-repos.sh"

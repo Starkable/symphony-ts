@@ -2,7 +2,7 @@
 
 一个 PMS 需求跨多个业务仓时的 Symphony V1.2 编排模式。Orchestrator **无需改代码**；通过 MCP 发现、scope 产物、`before_run` 物化与 polyrepo 布局完成。
 
-详见 change：`openspec/changes/multi-repo-scope-and-shared-skills/`。
+详见 [openspec-change-log.md](./openspec-change-log.md) 与本页下文。
 
 ## 三层资产
 
@@ -73,7 +73,7 @@ bash scripts/services/generate-catalog.sh
 
 ### 4. Policy skills
 
-`bootstrap/install.sh` 默认 **symlink** bundle `skills/` 至 workspace `.cursor/skills/`（Windows 用 junction）。强制拷贝：`install.sh --copy`。
+`bootstrap/install.sh` 默认 **symlink** bundle `skills/` 至 workspace `.agents/skills/`（Windows 用 junction）。强制拷贝：`install.sh --copy`。
 
 Skills 属环境资产，**不**进入业务 git 仓。
 
@@ -90,7 +90,7 @@ hooks:
       bash "${SYMPHONY_POLICY_ROOT}/bootstrap/install.sh" "$(pwd)"
     fi
     test -f openspec/config.yaml
-    test -f .cursor/skills/openspec-new-change/SKILL.md
+    test -f .agents/skills/openspec-new-change/SKILL.md
 
   before_run: |
     if [ -n "${SYMPHONY_REPO_ROOT:-}" ] && [ -f "${SYMPHONY_REPO_ROOT}/docs/snippets/materialize-repos.sh" ]; then
@@ -108,7 +108,7 @@ workspace/
 │   ├── proposal.md
 │   ├── scope.json
 │   └── …
-├── .cursor/skills/     → junction/symlink → bundle/skills
+├── .agents/skills/     → junction/symlink → bundle/skills
 ├── repos/
 │   ├── leke-refund/
 │   └── leke-api-manage/

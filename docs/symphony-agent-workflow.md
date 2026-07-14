@@ -1,10 +1,12 @@
-# Cursor Agent Policy 工作流
+# Symphony Agent Policy 工作流
 
 本文档定义 symphony-ts **Policy 层**编排契约。
 
 **V1.2（推荐）**：产物为唯一进度真相、`WORKFLOW.md` 唯一配置、无 workpad — 见 [V1.2 产物驱动模式](#v12-产物驱动模式)。  
 **V1.1（legacy）**：workpad Phase/Gate + `.symphony/workflow/phases/` 中文报告 — 见 [V1 OpenSpec 默认模式](#v1-openspec-默认模式)。  
 **增强（V2）**：Subagent 验证、blocked 等人、commit/push/handoff — 见 [V2 模式](#v2-模式subagent--git--人审)。
+
+OpenSpec 提案清理与能力地图：[openspec-change-log.md](./openspec-change-log.md)。Harness：[agent-harness.md](./agent-harness.md)。
 
 ---
 
@@ -18,13 +20,13 @@
 WORKFLOW.md（workflow.phases 短表 + 薄 prompt 正文）
         │
         ▼
-Symphony 扫描产物 → deriveEffectivePhase → 每 turn 注入 skill + produces
+Symphony 扫描产物 → deriveEffectivePhase → 每 turn 内联 skill 正文 + produces
         │
         ▼
 openspec/changes/{change_ref}/（六产物，英文文件名）
         │
         ▼
-.cursor/skills/openspec-*（clarify / review / plan / apply / verify / archive）
+.agents/skills/openspec-*（clarify / review / plan / apply / verify / archive）
 ```
 
 ### 配置（仅 WORKFLOW front matter）
@@ -58,8 +60,8 @@ workflow:
       requires_pass: true
 ```
 
-- `skill` 为 Cursor Skill 名称；legacy `handler` 字段仍可作为别名解析（deprecated）
-- 编排器在 workspace 首次 dispatch 前校验 `.cursor/skills/<skill>/SKILL.md` 存在
+- `skill` 为 **Agent skill id**（安装于 `.agents/skills/<id>/SKILL.md`）；不接受 `handler` 别名
+- 编排器在 workspace 每次 turn 组 prompt 前校验并读取 `.agents/skills/<skill>/SKILL.md`，将正文内联进 prompt（不依赖 CLI 原生 `/skill`）
 - Dashboard 与 `deriveEffectivePhase` 共用 `workflow.phases[].produces` 映射（非硬编码文件名表）
 - `requires_pass: true` 且 `status: fail` 时 Dashboard 阶段显示「未通过」，issue 仍可续跑重试
 
@@ -91,14 +93,13 @@ for phase in workflow.phases（有序）:
 
 WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远程等）。Symphony 追加：
 
-- `effective_phase`
-- `/{skill}`（Prompt 中同时保留 legacy `handler` 行供 bundle skill 读取）
-- 展开后的 `produces` 路径
+- `effective_phase`、`skill`（Agent skill id，无前导 `/`）、展开后的 `produces`
+- **`## Skill Instructions`**：内联 `.agents/skills/<id>/SKILL.md` 正文（与 CLI 无关）
 - **`## Symphony Policy (V1.2)`** 横切硬约束（ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push）
 
 ### V1.2 Skills 索引（白名单 7 个）
 
-由 `symphony-openspec-bundle` 的 `bootstrap/v12-skills.txt` 安装至 `.cursor/skills/`：
+由 `symphony-openspec-bundle` 的 `bootstrap/v12-skills.txt` 安装至 **`.agents/skills/`**：
 
 | 类型 | Skill |
 |------|-------|
@@ -110,7 +111,7 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 | verify | `openspec-verify` |
 | archive | `openspec-archive-change` |
 
-> 已移除：`openspec-propose`、`openspec-explore`、`symphony-*` V1.1 别名。
+> 已移除：`openspec-propose`、`openspec-explore`、`symphony-*` V1.1 别名；已移除 `handler` 配置别名与对 `.cursor/skills` 的 Policy 依赖。
 
 ### 与 orchestrator 的边界
 
@@ -132,7 +133,7 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 - **proposal_review pass**：scope 冻结
 - **before_run**：按 catalog 物化 `repos/<repo_key>/`；symphony-ts 在 plan/execute dispatch 前可重复触发（review pass 后）
 - **编排门禁**：`proposal_review fail` → effective phase 回 `clarify`；多仓时 `scope.json` schema 与 `materialized` 硬门禁；workflow done 后释放 claimed
-- **skills**：`SYMPHONY_POLICY_ROOT/skills` symlink/junction 引用，非 per-workspace 拷贝；**likou 不是 Policy Root**
+- **skills**：安装到 workspace **`.agents/skills/`**（`SYMPHONY_POLICY_ROOT/skills` symlink/junction）；**likou 不是 Policy Root**
 
 ---
 
@@ -160,7 +161,7 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 1. `openspec --version`（校验宿主机已装 CLI，**不**执行 install）
 2. 若不存在 `openspec/config.yaml` → `openspec init --tools none`
 3. 设置 `SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle**；调用 `bootstrap/install.sh`（默认 skills **symlink/junction**，非拷贝）
-4. 自检：`test -f openspec/config.yaml` 与 `.cursor/skills/openspec-new-change/SKILL.md`
+4. 自检：`test -f openspec/config.yaml` 与 `.agents/skills/openspec-new-change/SKILL.md`
 
 可复用片段：[docs/snippets/openspec-workspace-bootstrap.sh](./snippets/openspec-workspace-bootstrap.sh)
 
@@ -192,7 +193,7 @@ WORKFLOW.md（Phase 路由 + Gate + ChangeRef 绑定）
 openspec/changes/<ChangeRef>/（制品真相源：proposal / specs / design / tasks）
         │
         ▼
-.cursor/skills/openspec-*（clarify / plan / apply / archive）
+.agents/skills/openspec-*（clarify / plan / apply / archive）
 ```
 
 - **Policy** 管「何时、能否写代码、Gate 是否通过」
@@ -347,7 +348,9 @@ V1.1 **不使用** `.agents/skills`、commit、push、subagent skills。
 
 ### 可运行样例
 
-- Linear：[examples/workflow-cursor-policy/WORKFLOW.md](../examples/workflow-cursor-policy/WORKFLOW.md)
+- Linear + Cursor：[examples/workflow-cursor-policy/WORKFLOW.md](../examples/workflow-cursor-policy/WORKFLOW.md)
+- Linear + Codex：[examples/workflow-codex-policy/WORKFLOW.md](../examples/workflow-codex-policy/WORKFLOW.md)（Skill 内联；见 [docs/codex-policy-smoke.md](./codex-policy-smoke.md)）
+- Linear + Claude Code：[examples/workflow-claude-policy/WORKFLOW.md](../examples/workflow-claude-policy/WORKFLOW.md)
 - PMS：[examples/workflow-pms-openspec/WORKFLOW.md](../examples/workflow-pms-openspec/WORKFLOW.md)
 
 ---
@@ -419,4 +422,4 @@ clarify ⇄ blocked（等人回复 [CLARIFY]）
 | 需求平台写回（Linear） | Agent 侧 GraphQL 工具（PMS 由 orchestrator 写回，见 [pms-tracker.md](./pms-tracker.md)） |
 | `[MISSING_INFO]` harness 解析 | 结构化 turn outcome |
 | clarification 超时 sweeper | 自动 reset + 超时评论 |
-| Codex Policy 对等 | 与 Cursor 相同 Policy 流程 |
+| Codex Policy 对等 | 与 Cursor 相同 Policy 流程（样例 `examples/workflow-codex-policy/`） |

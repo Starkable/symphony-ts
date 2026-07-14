@@ -8,7 +8,9 @@
 
 Symphony-TS is a TypeScript implementation of the [Symphony](https://github.com/openai/symphony) specification.
 
-**In one sentence**: A long-running daemon that polls a Linear board, creates isolated workspaces for each active issue, launches a Codex (OpenAI coding agent) subprocess per issue, and manages concurrency, retries, state reconciliation, and observability.
+**In one sentence**: A long-running daemon that polls a Linear (or PMS) board, creates isolated workspaces for each active issue, launches a coding-agent harness (`codex` / `cursor` / `claude`) per issue, and manages concurrency, retries, state reconciliation, and observability.
+
+Policy / harness details (Chinese): [symphony-agent-workflow.md](./symphony-agent-workflow.md), [agent-harness.md](./agent-harness.md), [openspec-change-log.md](./openspec-change-log.md).
 
 **Core data flow**:
 

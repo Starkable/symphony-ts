@@ -6,6 +6,7 @@ import type {
   WorkflowDefinition,
 } from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
+import type { AgentSkillPayload } from "../workflow/read-agent-skill.js";
 
 export const DEFAULT_WORKFLOW_PROMPT =
   "You are working on an issue from Linear.";
@@ -48,6 +49,8 @@ export interface WorkflowDispatchInjection {
   skill: string;
   producesPath: string;
   changeRef: string;
+  /** 当前 phase 的 SKILL.md 载荷；done / 无 skill 时可为 null。 */
+  skillPayload?: AgentSkillPayload | null;
 }
 
 export interface BuildTurnPromptInput extends RenderPromptInput {
@@ -110,6 +113,20 @@ export function buildSymphonyPolicySection(changeRef: string): string {
   ].join("\n");
 }
 
+export function buildSkillInvocationSection(skill: AgentSkillPayload): string {
+  const lines = [
+    `## Skill: ${skill.id}`,
+    skill.description.length > 0
+      ? `## Description: ${skill.description}`
+      : null,
+    "",
+    "## Skill Instructions:",
+    skill.body,
+  ].filter((line): line is string => line !== null);
+
+  return lines.join("\n");
+}
+
 export function appendWorkflowDispatchSection(
   basePrompt: string,
   dispatch: WorkflowDispatchInjection,
@@ -129,24 +146,37 @@ export function appendWorkflowDispatchSection(
     ].join("\n");
   }
 
-  const skillCommand = dispatch.skill.startsWith("/")
-    ? dispatch.skill
-    : `/${dispatch.skill}`;
+  const skillId = dispatch.skill.trim();
+  const skillPayload = dispatch.skillPayload ?? null;
 
-  return [
+  if (skillId.length > 0 && skillPayload === null) {
+    throw new PromptTemplateError(
+      "template_render_error",
+      `workflow dispatch for phase '${dispatch.effectivePhaseId}' requires skillPayload for skill '${skillId}'.`,
+    );
+  }
+
+  const sections = [
     basePrompt,
     "",
     "## Symphony Workflow (V1.2)",
     `- change_ref: ${dispatch.changeRef}`,
     `- effective_phase: ${dispatch.effectivePhaseId}`,
-    `- skill: ${skillCommand}`,
-    `- handler: ${skillCommand}`,
+    `- skill: ${skillId}`,
     `- produces: ${dispatch.producesPath}`,
-    "",
-    `Run ${skillCommand} for this phase and write the artifact to ${dispatch.producesPath}.`,
-    "",
-    policySection,
-  ].join("\n");
+  ];
+
+  if (skillPayload !== null) {
+    sections.push(
+      "",
+      buildSkillInvocationSection(skillPayload),
+      "",
+      `请按上方 Skill Instructions 完成当前阶段，并将产物写到 ${dispatch.producesPath}。`,
+    );
+  }
+
+  sections.push("", policySection);
+  return sections.join("\n");
 }
 
 export function buildContinuationPrompt(input: {

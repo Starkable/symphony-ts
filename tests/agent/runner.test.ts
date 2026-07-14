@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -283,6 +283,63 @@ describe("AgentRunner", () => {
     } finally {
       completeSpy.mockRestore();
     }
+  });
+
+  it("inlines Skill Instructions from .agents/skills into Codex turn prompts", async () => {
+    const root = await createRoot();
+    const workspacePath = join(root, "issue-1");
+    const skillDir = join(
+      workspacePath,
+      ".agents",
+      "skills",
+      "openspec-new-change",
+    );
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\ndescription: Clarify phase\n---\n\nCODEX_INLINE_SKILL_BODY\n",
+      "utf8",
+    );
+
+    const prompts: string[] = [];
+    const config = createConfig(root, "unused");
+    config.workflow = {
+      version: "1.2",
+      changeRefStrategy: "kebab_case_issue_id",
+      phases: [
+        {
+          id: "clarify",
+          skill: "openspec-new-change",
+          produces: "openspec/changes/{change_ref}/proposal.md",
+          requiresPass: false,
+        },
+      ],
+    };
+    config.agent.maxTurns = 1;
+
+    const runner = new AgentRunner({
+      config,
+      tracker: createTracker({
+        refreshStates: [
+          { id: "issue-1", identifier: "ABC-123", state: "Done" },
+        ],
+      }),
+      createCodexClient: (input) =>
+        createStubCodexClient(prompts, input, {
+          statuses: ["completed"],
+        }),
+    });
+
+    const result = await runner.run({
+      issue: ISSUE_FIXTURE,
+      attempt: null,
+    });
+
+    expect(result.runAttempt.status).toBe("succeeded");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("## Skill Instructions");
+    expect(prompts[0]).toContain("CODEX_INLINE_SKILL_BODY");
+    expect(prompts[0]).toContain("openspec-new-change");
   });
 
   it("closes the session and still runs after_run best-effort when refresh fails", async () => {

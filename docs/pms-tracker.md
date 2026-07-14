@@ -183,4 +183,4 @@ pnpm pms:probe examples/workflow-pms/WORKFLOW.md \
 | `comments` | 指定工单的评论读取结果 |
 | `writeProbe` | `--allow-write` 时的 comment/transition 探测结果 |
 
-后续 PMS 读/写 change 启动前，关键 BCS JQL case 应在真实环境 `jqlValid: true`。详见 [`openspec/changes/pms-bcs-integration-verify/evidence/README.md`](../openspec/changes/pms-bcs-integration-verify/evidence/README.md)。
+后续 PMS 联调前，关键 BCS JQL case 应在真实环境确认 `jqlValid: true`。验收清单与历史说明见 [openspec-change-log.md](./openspec-change-log.md)（原 `pms-bcs-integration-verify` 已清理）。

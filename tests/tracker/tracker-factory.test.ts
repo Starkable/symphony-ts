@@ -77,6 +77,14 @@ function baseConfig(
         turnLogIncludePrompt: false,
         turnLogWorkspaceArtifact: true,
       },
+      claude: {
+        command: "claude",
+        model: null,
+        permissionMode: "acceptEdits",
+        allowedTools: null,
+        reusePolicy: "per_issue",
+        turnTimeoutMs: 3_600_000,
+      },
     },
     server: { port: null },
     observability: {

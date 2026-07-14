@@ -39,18 +39,18 @@ describe("workflow-phases-parser", () => {
     expect(parsed?.phases[1]?.requiresPass).toBe(true);
   });
 
-  it("accepts legacy handler alias as skill", () => {
-    const parsed = parseSymphonyWorkflowConfig({
-      phases: [
-        {
-          id: "clarify",
-          handler: "openspec-new-change",
-          produces: "openspec/changes/{change_ref}/proposal.md",
-        },
-      ],
-    });
-
-    expect(parsed?.phases[0]?.skill).toBe("openspec-new-change");
+  it("rejects legacy handler field", () => {
+    expect(() =>
+      parseSymphonyWorkflowConfig({
+        phases: [
+          {
+            id: "clarify",
+            handler: "openspec-new-change",
+            produces: "openspec/changes/{change_ref}/proposal.md",
+          },
+        ],
+      }),
+    ).toThrow(/handler is no longer supported/);
   });
 
   it("rejects duplicate phase ids and empty skill/produces", () => {

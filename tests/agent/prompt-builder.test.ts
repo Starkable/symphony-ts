@@ -190,7 +190,7 @@ describe("prompt builder", () => {
     } satisfies Partial<PromptTemplateError>);
   });
 
-  it("appends V1.2 workflow dispatch on continuation turns", async () => {
+  it("appends V1.2 workflow dispatch with inlined skill instructions", async () => {
     const prompt = await buildTurnPrompt({
       workflow: {
         promptTemplate: "Base prompt for {{ issue.identifier }}",
@@ -204,16 +204,37 @@ describe("prompt builder", () => {
         effectivePhaseId: "plan",
         skill: "openspec-continue-change",
         producesPath: "openspec/changes/abc-123/tasks.md",
+        skillPayload: {
+          id: "openspec-continue-change",
+          description: "Continue the change",
+          body: "Write tasks.md for the change.",
+          sourcePath: "/ws/.agents/skills/openspec-continue-change/SKILL.md",
+        },
       },
     });
 
     expect(prompt).toContain("Continue working on issue ABC-123");
     expect(prompt).toContain("effective_phase: plan");
-    expect(prompt).toContain("- skill: /openspec-continue-change");
+    expect(prompt).toContain("- skill: openspec-continue-change");
+    expect(prompt).not.toContain("- skill: /openspec-continue-change");
+    expect(prompt).not.toContain("handler:");
+    expect(prompt).toContain("## Skill Instructions:");
+    expect(prompt).toContain("Write tasks.md for the change.");
     expect(prompt).toContain("openspec/changes/abc-123/tasks.md");
     expect(prompt).toContain("## Symphony Policy (V1.2)");
     expect(prompt).toContain("禁止 AskUserQuestion");
     expect(prompt).toContain("openspec/changes/abc-123/");
+  });
+
+  it("requires skillPayload when phase skill is set", () => {
+    expect(() =>
+      appendWorkflowDispatchSection("Base", {
+        changeRef: "abc-123",
+        effectivePhaseId: "plan",
+        skill: "openspec-continue-change",
+        producesPath: "openspec/changes/abc-123/tasks.md",
+      }),
+    ).toThrow(/requires skillPayload/);
   });
 
   it("builds done-state workflow dispatch section with policy", () => {

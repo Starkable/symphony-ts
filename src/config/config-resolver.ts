@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
+import { isClaudeCommandAvailable } from "../agent/backends/claude/claude-command-resolve.js";
 import { isCursorCommandAvailable } from "../agent/backends/cursor/cursor-command-resolve.js";
 import {
   type WorkflowDefinition,
@@ -12,6 +13,11 @@ import {
   DEFAULT_ACTIVE_STATES,
   DEFAULT_ARTIFACT_STORE_ENABLED,
   DEFAULT_ARTIFACT_STORE_HYDRATE,
+  DEFAULT_CLAUDE_COMMAND,
+  DEFAULT_CLAUDE_MODEL,
+  DEFAULT_CLAUDE_PERMISSION_MODE,
+  DEFAULT_CLAUDE_REUSE_POLICY,
+  DEFAULT_CLAUDE_TURN_TIMEOUT_MS,
   DEFAULT_CODEX_COMMAND,
   DEFAULT_CURSOR_COMMAND,
   DEFAULT_CURSOR_MODE,
@@ -47,11 +53,14 @@ import {
 } from "./defaults.js";
 import type {
   AgentHarnessKind,
+  ClaudePermissionMode,
+  ClaudeReusePolicy,
   CursorHarnessMode,
   CursorReusePolicy,
   DispatchValidationResult,
   ResolvedWorkflowConfig,
   SymphonyWorkflowConfig,
+  WorkflowClaudeHarnessConfig,
   WorkflowCodexConfig,
   WorkflowCursorHarnessConfig,
   WorkflowTrackerOAuthConfig,
@@ -82,12 +91,14 @@ export function resolveWorkflowConfig(
   const harnesses = asRecord(config.harnesses);
   const harnessesCodex = asRecord(harnesses.codex);
   const harnessesCursor = asRecord(harnesses.cursor);
+  const harnessesClaude = asRecord(harnesses.claude);
   const server = asRecord(config.server);
   const observability = asRecord(config.observability);
   const artifactStore = asRecord(config.artifact_store);
   const workflowConfig = parseSymphonyWorkflowConfig(config.workflow);
   const resolvedCodex = resolveCodexHarnessConfig(codex, harnessesCodex);
   const resolvedCursor = resolveCursorHarnessConfig(harnessesCursor);
+  const resolvedClaude = resolveClaudeHarnessConfig(harnessesClaude);
   const trackerKind = readString(tracker.kind) ?? DEFAULT_TRACKER_KIND;
   const normalizedKind = trackerKind.trim().toLowerCase();
 
@@ -166,6 +177,7 @@ export function resolveWorkflowConfig(
     harnesses: {
       codex: resolvedCodex,
       cursor: resolvedCursor,
+      claude: resolvedClaude,
     },
     codex: resolvedCodex,
     server: {
@@ -242,6 +254,7 @@ export function validateDispatchConfig(
   const harnesses = config.harnesses ?? {
     codex: config.codex,
     cursor: resolveCursorHarnessConfig({}),
+    claude: resolveClaudeHarnessConfig({}),
   };
 
   const workflowError = validateWorkflowConfigForDispatch(config.workflow);
@@ -256,6 +269,14 @@ export function validateDispatchConfig(
     );
     if (cursorError !== null) {
       return cursorError;
+    }
+    return { ok: true };
+  }
+
+  if (config.agent.harness === "claude") {
+    const claudeError = validateClaudeHarnessConfig(harnesses.claude);
+    if (claudeError !== null) {
+      return claudeError;
     }
     return { ok: true };
   }
@@ -320,10 +341,28 @@ function resolveCursorHarnessConfig(
   };
 }
 
+function resolveClaudeHarnessConfig(
+  harnessesClaude: Record<string, unknown>,
+): WorkflowClaudeHarnessConfig {
+  return {
+    command: readString(harnessesClaude.command) ?? DEFAULT_CLAUDE_COMMAND,
+    model: readString(harnessesClaude.model) ?? DEFAULT_CLAUDE_MODEL,
+    permissionMode: readClaudePermissionMode(harnessesClaude.permission_mode),
+    allowedTools: readStringListOrNull(harnessesClaude.allowed_tools),
+    reusePolicy: readClaudeReusePolicy(harnessesClaude.reuse_policy),
+    turnTimeoutMs:
+      readPositiveInteger(harnessesClaude.turn_timeout_ms) ??
+      DEFAULT_CLAUDE_TURN_TIMEOUT_MS,
+  };
+}
+
 function readHarnessKind(value: unknown): AgentHarnessKind {
   const harness = readString(value)?.trim().toLowerCase();
   if (harness === "cursor") {
     return "cursor";
+  }
+  if (harness === "claude") {
+    return "claude";
   }
   return "codex";
 }
@@ -380,6 +419,62 @@ function readCursorReusePolicy(value: unknown): CursorReusePolicy {
     return "fresh_each_run";
   }
   return DEFAULT_CURSOR_REUSE_POLICY;
+}
+
+function readClaudeReusePolicy(value: unknown): ClaudeReusePolicy {
+  const policy = readString(value)?.trim().toLowerCase();
+  if (policy === "fresh_each_run") {
+    return "fresh_each_run";
+  }
+  return DEFAULT_CLAUDE_REUSE_POLICY;
+}
+
+function readClaudePermissionMode(value: unknown): ClaudePermissionMode {
+  const mode = readString(value)?.trim();
+  switch (mode) {
+    case "default":
+    case "acceptEdits":
+    case "bypassPermissions":
+    case "plan":
+    case "dontAsk":
+      return mode;
+    default:
+      return DEFAULT_CLAUDE_PERMISSION_MODE;
+  }
+}
+
+function readStringListOrNull(value: unknown): readonly string[] | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const items = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return items;
+}
+
+function validateClaudeHarnessConfig(
+  claude: WorkflowClaudeHarnessConfig,
+): DispatchValidationResult | null {
+  if (claude.command.trim() === "") {
+    return invalid(
+      ERROR_CODES.configInvalid,
+      "harnesses.claude.command must be present and non-empty before dispatch.",
+    );
+  }
+
+  if (!isClaudeCommandAvailable(claude.command)) {
+    return invalid(
+      ERROR_CODES.configInvalid,
+      `harnesses.claude.command '${claude.command}' is not executable. Install Claude Code CLI or set an absolute path.`,
+    );
+  }
+
+  return null;
 }
 
 function validatePmsOAuthConfig(

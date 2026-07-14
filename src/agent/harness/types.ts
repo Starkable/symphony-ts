@@ -5,7 +5,7 @@ import type {
   Workspace,
 } from "../../domain/model.js";
 
-export type HarnessKind = "codex" | "cursor";
+export type HarnessKind = "codex" | "cursor" | "claude";
 
 export type HarnessRuntimeEventKind =
   | "session_started"

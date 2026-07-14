@@ -96,25 +96,25 @@ hooks:
 #   change_ref: kebab_case_issue_id
 #   phases:
 #     - id: clarify
-#       handler: openspec-new-change
+#       skill: openspec-new-change
 #       produces: openspec/changes/{change_ref}/proposal.md
 #     - id: proposal_review
-#       handler: openspec-proposal-review
+#       skill: openspec-proposal-review
 #       produces: openspec/changes/{change_ref}/proposal_review.md
 #       requires_pass: true
 #     - id: plan
-#       handler: openspec-continue-change
+#       skill: openspec-continue-change
 #       produces: openspec/changes/{change_ref}/tasks.md
 #     - id: execute
-#       handler: openspec-apply-change
+#       skill: openspec-apply-change
 #       produces: openspec/changes/{change_ref}/execute.md
 #       requires_pass: true
 #     - id: verify
-#       handler: openspec-verify
+#       skill: openspec-verify
 #       produces: openspec/changes/{change_ref}/verification.md
 #       requires_pass: true
 #     - id: archive
-#       handler: openspec-archive-change
+#       skill: openspec-archive-change
 #       produces: openspec/changes/{change_ref}/archive.md
 #       requires_pass: true
 
@@ -123,6 +123,8 @@ hooks:
 # ============================================================
 agent:
   # Agent runtime backend: codex (default) or cursor.
+  # Default: codex
+  # Backend selection: codex | cursor | claude
   # Default: codex
   harness: codex
 
@@ -196,6 +198,30 @@ harnesses:
     # Write full CLI output to <workspace>/.symphony/cursor-turn-N.log (UTF-8).
     # Default: true
     turn_log_workspace_artifact: true
+
+  claude:
+    # Claude Code CLI. Use an absolute path if PATH is limited.
+    # Default: claude
+    command: claude
+
+    # Optional model id.
+    model: null
+
+    # Permission mode for unattended runs.
+    # Values: default | acceptEdits | bypassPermissions | plan | dontAsk
+    # Default: acceptEdits
+    permission_mode: acceptEdits
+
+    # Optional allow-list passed as repeated --allowedTools flags.
+    # Default: null (omit flag)
+    allowed_tools: null
+
+    # Session reuse across workers for the same issue.
+    # Values: per_issue | fresh_each_run
+    reuse_policy: per_issue
+
+    # Per-turn subprocess timeout in milliseconds.
+    turn_timeout_ms: 3600000
 
 # ============================================================
 # codex — Legacy Codex block (alias for harnesses.codex)

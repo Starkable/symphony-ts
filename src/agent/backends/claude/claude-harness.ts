@@ -8,7 +8,6 @@ import {
   type RunAttemptPhase,
   type Workspace,
   createEmptyLiveSession,
-  normalizeIssueState,
 } from "../../../domain/model.js";
 import { applyHarnessEventToSession } from "../../../logging/session-metrics.js";
 import type { StructuredLogger } from "../../../logging/structured-logger.js";
@@ -42,50 +41,32 @@ import { buildTurnPrompt } from "../../prompt-builder.js";
 import { logAgentPromptBuilt } from "../../prompt-log.js";
 import { AgentRunnerError } from "../../runner.js";
 import {
-  type CursorCliRunResult,
-  type CursorCliRunner,
-  buildCursorCliArgs,
-  runCursorCli,
-} from "./cursor-cli-session.js";
-import { resolveCursorSpawnSpec } from "./cursor-command-resolve.js";
+  type ClaudeCliRunner,
+  runClaudeCli,
+} from "./claude-cli-session.js";
 import {
-  createCursorHarnessEvent,
-  mapCursorCliResultToHarnessEvent,
-  toCursorHarnessAgentEvent,
-} from "./cursor-event-adapter.js";
+  createClaudeHarnessEvent,
+  mapClaudeCliResultToHarnessEvent,
+  toClaudeHarnessAgentEvent,
+} from "./claude-event-adapter.js";
 import {
-  clearCursorSession,
-  readCursorSession,
-  writeCursorSession,
-} from "./cursor-session-store.js";
-import {
-  appendCursorTurnArtifactChunk,
-  extractThinkingFromCursorOutput,
-  finalizeCursorTurnArtifact,
-  formatCursorInvocation,
-  redactCursorCliArgs,
-  truncateForStructuredLog,
-  writeCursorTurnArtifactHeader,
-} from "./cursor-turn-log.js";
+  clearClaudeSession,
+  readClaudeSession,
+  writeClaudeSession,
+} from "./claude-session-store.js";
 
-export class CursorAgentHarness implements AgentHarness {
+export class ClaudeAgentHarness implements AgentHarness {
   private config: ResolvedWorkflowConfig;
-
   private tracker: IssueTracker;
-
   private workspaceManager: WorkspaceManager;
-
   private hooks: WorkspaceHookRunner;
-
-  private readonly runCli: CursorCliRunner;
-
+  private readonly runCli: ClaudeCliRunner;
   private readonly onEvent: ((event: HarnessAgentEvent) => void) | undefined;
-
   private readonly logger: StructuredLogger | null;
 
   constructor(
     input: AgentHarnessFactoryInput & {
-      runCli?: CursorCliRunner;
+      runCli?: ClaudeCliRunner;
     },
   ) {
     this.config = input.config;
@@ -100,7 +81,7 @@ export class CursorAgentHarness implements AgentHarness {
         root: input.config.workspace.root,
         hooks: this.hooks,
       });
-    this.runCli = input.runCli ?? runCursorCli;
+    this.runCli = input.runCli ?? runClaudeCli;
     this.onEvent = input.onEvent;
   }
 
@@ -152,8 +133,8 @@ export class CursorAgentHarness implements AgentHarness {
       await cleanupWorkspaceArtifacts(workspace.path);
       const workspacePath = workspace.path;
 
-      if (this.config.harnesses.cursor.reusePolicy === "fresh_each_run") {
-        await clearCursorSession(workspacePath);
+      if (this.config.harnesses.claude.reusePolicy === "fresh_each_run") {
+        await clearClaudeSession(workspacePath);
       }
 
       await this.hooks.run({
@@ -162,9 +143,9 @@ export class CursorAgentHarness implements AgentHarness {
       });
 
       runAttempt.status = "launching_agent_process";
-      const sessionStartedEvent = createCursorHarnessEvent({
+      const sessionStartedEvent = createClaudeHarnessEvent({
         kind: "session_started",
-        message: "cursor worker started",
+        message: "claude worker started",
       });
       applyHarnessEventToSession(liveSession, sessionStartedEvent);
       this.emitHarnessEvent(sessionStartedEvent, {
@@ -175,10 +156,10 @@ export class CursorAgentHarness implements AgentHarness {
       });
 
       const storedSession =
-        this.config.harnesses.cursor.reusePolicy === "per_issue"
-          ? await readCursorSession(workspacePath)
+        this.config.harnesses.claude.reusePolicy === "per_issue"
+          ? await readClaudeSession(workspacePath)
           : null;
-      let chatId = storedSession?.chatId ?? null;
+      let sessionId = storedSession?.sessionId ?? null;
 
       for (
         let turnNumber = 1;
@@ -203,92 +184,37 @@ export class CursorAgentHarness implements AgentHarness {
           issue,
           attempt: input.attempt,
           turnNumber,
-          chatId,
           workspacePath,
         });
-        const cursorConfig = this.config.harnesses.cursor;
+        const claudeConfig = this.config.harnesses.claude;
         await logAgentPromptBuilt(this.logger, {
           issue,
           attempt: input.attempt,
           workspacePath,
           turnNumber,
           prompt,
-          includeFullPrompt: cursorConfig.turnLogIncludePrompt,
-          maxBytes: cursorConfig.turnLogMaxBytes,
-        });
-        const args = buildCursorCliArgs({
-          workspace: workspacePath,
-          prompt,
-          chatId,
-          model: cursorConfig.model,
-          sandbox: cursorConfig.sandbox,
+          includeFullPrompt: false,
+          maxBytes: 32_768,
         });
 
         runAttempt.status =
           turnNumber === 1 ? "initializing_session" : "streaming_turn";
 
-        if (
-          this.logger !== null &&
-          cursorConfig.sandbox !== undefined &&
-          cursorConfig.sandbox !== null
-        ) {
-          await this.logger.warn(
-            "cursor_sandbox_experimental",
-            "harnesses.cursor.sandbox is experimental and may not be supported by all CLI versions.",
-            { sandbox: cursorConfig.sandbox },
-          );
-        }
-        const redactedArgs = redactCursorCliArgs(args, {
-          includePrompt: cursorConfig.turnLogIncludePrompt,
-        });
-        const spawnSpec = resolveCursorSpawnSpec(
-          cursorConfig.command,
-          redactedArgs,
-        );
-        const cliInvocation = formatCursorInvocation(
-          spawnSpec.resolvedPath,
-          redactedArgs,
-        );
-        const turnStartedAt = new Date().toISOString();
-        let artifactPath: string | null = null;
-
-        if (cursorConfig.turnLogWorkspaceArtifact) {
-          artifactPath = await writeCursorTurnArtifactHeader({
-            workspacePath,
-            turnNumber,
-            startedAt: turnStartedAt,
-            cliInvocation,
-          });
-        }
-
-        await this.logCursorTurnStart({
-          issue,
-          attempt: input.attempt,
-          workspacePath,
-          turnNumber,
-          chatId,
-          cliCommand: spawnSpec.resolvedPath,
-          cliCommandConfig: cursorConfig.command,
-          cliArgs: redactedArgs,
-          promptChars: prompt.length,
-        });
-
-        const turnStartedMs = Date.now();
         let streamedTerminalEvent: HarnessRuntimeEvent | null = null;
         const cliResult = await this.runCli({
-          command: cursorConfig.command,
+          command: claudeConfig.command,
           cwd: workspacePath,
-          workspace: workspacePath,
           prompt,
-          chatId,
-          model: cursorConfig.model,
-          sandbox: cursorConfig.sandbox,
-          turnTimeoutMs: cursorConfig.turnTimeoutMs,
+          sessionId,
+          model: claudeConfig.model,
+          permissionMode: claudeConfig.permissionMode,
+          allowedTools: claudeConfig.allowedTools,
+          turnTimeoutMs: claudeConfig.turnTimeoutMs,
           ...(input.signal === undefined ? {} : { signal: input.signal }),
-          onSessionId: async (sessionId) => {
-            chatId = sessionId;
-            await writeCursorSession(workspacePath, {
-              chatId: sessionId,
+          onSessionId: async (nextSessionId) => {
+            sessionId = nextSessionId;
+            await writeClaudeSession(workspacePath, {
+              sessionId: nextSessionId,
               updatedAt: new Date().toISOString(),
             });
           },
@@ -308,56 +234,17 @@ export class CursorAgentHarness implements AgentHarness {
               streamedTerminalEvent = enriched;
             }
           },
-          ...(artifactPath === null || !cursorConfig.turnLogWorkspaceArtifact
-            ? {}
-            : {
-                onOutput: (chunk) => {
-                  void appendCursorTurnArtifactChunk({
-                    artifactPath: artifactPath as string,
-                    stream: chunk.stream,
-                    text: chunk.text,
-                  });
-                },
-              }),
         });
 
         if (cliResult.sessionId !== null) {
-          chatId = cliResult.sessionId;
+          sessionId = cliResult.sessionId;
         }
-
-        const combinedOutput = `${cliResult.stdout}\n${cliResult.stderr}`;
-        const thinking = extractThinkingFromCursorOutput(combinedOutput);
-
-        if (artifactPath !== null && cursorConfig.turnLogWorkspaceArtifact) {
-          await finalizeCursorTurnArtifact({
-            artifactPath,
-            finishedAt: new Date().toISOString(),
-            exitCode: cliResult.exitCode,
-            timedOut: cliResult.timedOut,
-            stdout: cliResult.stdout,
-            stderr: cliResult.stderr,
-            thinking,
-            streamedOutput: true,
-          });
-        }
-
-        await this.logCursorTurnFinished({
-          issue,
-          attempt: input.attempt,
-          workspacePath,
-          turnNumber,
-          chatId,
-          cliResult,
-          thinking,
-          durationMs: Date.now() - turnStartedMs,
-          artifactPath,
-        });
 
         const harnessEvent =
           streamedTerminalEvent ??
-          mapCursorCliResultToHarnessEvent(cliResult, {
+          mapClaudeCliResultToHarnessEvent(cliResult, {
             turnNumber,
-            chatId,
+            sessionId,
           });
         if (streamedTerminalEvent === null) {
           applyHarnessEventToSession(liveSession, harnessEvent);
@@ -376,8 +263,8 @@ export class CursorAgentHarness implements AgentHarness {
               : harnessEvent.kind === "turn_cancelled"
                 ? "cancelled"
                 : "failed",
-          sessionId: chatId,
-          threadId: chatId,
+          sessionId,
+          threadId: sessionId,
           turnId: `turn-${turnNumber}`,
           usage: harnessEvent.usage ?? null,
           rateLimits: null,
@@ -454,7 +341,6 @@ export class CursorAgentHarness implements AgentHarness {
     issue: Issue;
     attempt: number | null;
     turnNumber: number;
-    chatId: string | null;
     workspacePath: string;
   }): Promise<string> {
     const workflowDispatch =
@@ -508,7 +394,7 @@ export class CursorAgentHarness implements AgentHarness {
   }
 
   private emitHarnessEvent(
-    event: Parameters<typeof toCursorHarnessAgentEvent>[0],
+    event: Parameters<typeof toClaudeHarnessAgentEvent>[0],
     context: {
       issue: Issue;
       attempt: number | null;
@@ -517,101 +403,13 @@ export class CursorAgentHarness implements AgentHarness {
     },
   ): void {
     this.onEvent?.(
-      toCursorHarnessAgentEvent(event, {
+      toClaudeHarnessAgentEvent(event, {
         issueId: context.issue.id,
         issueIdentifier: context.issue.identifier,
         attempt: context.attempt,
         workspacePath: context.workspacePath,
         turnCount: context.liveSession.turnCount,
       }),
-    );
-  }
-
-  private async logCursorTurnStart(input: {
-    issue: Issue;
-    attempt: number | null;
-    workspacePath: string;
-    turnNumber: number;
-    chatId: string | null;
-    cliCommand: string;
-    cliCommandConfig: string;
-    cliArgs: string[];
-    promptChars: number;
-  }): Promise<void> {
-    if (this.logger === null || !this.config.harnesses.cursor.turnLogEnabled) {
-      return;
-    }
-
-    await this.logger.info("cursor_turn_start", "Cursor CLI turn starting.", {
-      harness: "cursor",
-      issue_id: input.issue.id,
-      issue_identifier: input.issue.identifier,
-      attempt: input.attempt,
-      workspace_path: input.workspacePath,
-      turn_number: input.turnNumber,
-      turn_id: `turn-${input.turnNumber}`,
-      chat_id: input.chatId,
-      cli_command: input.cliCommand,
-      cli_command_config: input.cliCommandConfig,
-      cli_args: input.cliArgs,
-      prompt_chars: input.promptChars,
-    });
-  }
-
-  private async logCursorTurnFinished(input: {
-    issue: Issue;
-    attempt: number | null;
-    workspacePath: string;
-    turnNumber: number;
-    chatId: string | null;
-    cliResult: CursorCliRunResult;
-    thinking: string | null;
-    durationMs: number;
-    artifactPath: string | null;
-  }): Promise<void> {
-    if (this.logger === null || !this.config.harnesses.cursor.turnLogEnabled) {
-      return;
-    }
-
-    const maxBytes = this.config.harnesses.cursor.turnLogMaxBytes;
-    const combinedOutput = `${input.cliResult.stdout}\n${input.cliResult.stderr}`;
-    const level =
-      input.cliResult.timedOut || input.cliResult.exitCode !== 0
-        ? "error"
-        : "info";
-
-    await this.logger.log(
-      level,
-      "cursor_turn_finished",
-      "Cursor CLI turn finished.",
-      {
-        harness: "cursor",
-        outcome:
-          input.cliResult.timedOut || input.cliResult.exitCode !== 0
-            ? "failed"
-            : "completed",
-        issue_id: input.issue.id,
-        issue_identifier: input.issue.identifier,
-        attempt: input.attempt,
-        workspace_path: input.workspacePath,
-        turn_number: input.turnNumber,
-        turn_id: `turn-${input.turnNumber}`,
-        chat_id: input.chatId,
-        exit_code: input.cliResult.exitCode,
-        timed_out: input.cliResult.timedOut,
-        duration_ms: input.durationMs,
-        ...(input.artifactPath === null
-          ? {}
-          : { artifact_path: input.artifactPath }),
-        stdout: truncateForStructuredLog(input.cliResult.stdout, maxBytes),
-        stderr: truncateForStructuredLog(input.cliResult.stderr, maxBytes),
-        ...(input.thinking === null
-          ? {}
-          : {
-              thinking: truncateForStructuredLog(input.thinking, maxBytes),
-            }),
-        output_chars: combinedOutput.length,
-      },
     );
   }
 
@@ -666,7 +464,7 @@ export class CursorAgentHarness implements AgentHarness {
     const message =
       input.error instanceof Error
         ? input.error.message
-        : "Cursor harness failed.";
+        : "Claude harness failed.";
     const code =
       typeof input.error === "object" &&
       input.error !== null &&
@@ -745,7 +543,7 @@ function toAbortMessage(reason: unknown): string {
 }
 
 function classifyFailureStatus(code: string | undefined): RunAttemptPhase {
-  if (code === "cursor_turn_timeout" || code === "hook_timed_out") {
+  if (code === "claude_turn_timeout" || code === "hook_timed_out") {
     return "timed_out";
   }
   return "failed";

@@ -33,8 +33,8 @@ else
   echo "[bootstrap] SYMPHONY_POLICY_ROOT 未设置，仅 openspec init，无 Policy skills" >&2
 fi
 
-if [ ! -f .cursor/skills/openspec-new-change/SKILL.md ]; then
-  echo "openspec workspace bootstrap failed: policy skills missing" >&2
+if [ ! -f .agents/skills/openspec-new-change/SKILL.md ]; then
+  echo "openspec workspace bootstrap failed: policy skills missing (.agents/skills)" >&2
   exit 1
 fi
 

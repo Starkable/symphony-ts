@@ -2,6 +2,8 @@
 
 symphony-ts V1.2 实现产物驱动阶段推导；**openspec skill 写文件**仍在独立仓 `symphony-openspec-bundle` 完成。本页列出 bundle 需同步项（非 symphony-ts 仓内实现）。
 
+历史提案清理见 [openspec-change-log.md](./openspec-change-log.md)。
+
 ## Canonical skill 列表（WORKFLOW `skill` 字段）
 
 | Phase | skill | 写入路径 | front matter |
@@ -19,10 +21,11 @@ symphony-ts V1.2 实现产物驱动阶段推导；**openspec skill 写文件**�
 
 ## Prompt 注入（symphony-ts）
 
-每 turn `appendWorkflowDispatchSection` 注入两段：
+每 turn 组装：
 
-1. **`## Symphony Workflow (V1.2)`** — `change_ref`、`effective_phase`、`skill`、`produces`
-2. **`## Symphony Policy (V1.2)`** — ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push
+1. **`## Symphony Workflow (V1.2)`** — `change_ref`、`effective_phase`、`skill`（id）、`produces`
+2. **`## Skill Instructions`** — 内联 `.agents/skills/<id>/SKILL.md` 正文（CLI 无关）
+3. **`## Symphony Policy (V1.2)`** — ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push
 
 phase skill 正文不应重复 Policy 全文；见 bundle `skills/_template/symphony-v1.2-preamble.md`。
 
@@ -39,16 +42,18 @@ phase skill 正文不应重复 Policy 全文；见 bundle `skills/_template/symp
 - `openspec-proposal-review` 写 `proposal_review.md`，不再写 `.symphony/workflow/phases/`
 - `openspec-apply-change` 成功结束时写 **`execute.md` + status: pass**
 
-## Install 变更
+## Install 变更（独立仓跟进）
 
 - **移除**对 `.symphony/workflow/phases/` 中文模板拷贝
-- 按 `v12-skills.txt` 白名单逐 skill symlink/junction 至 `.cursor/skills/`
+- **BREAKING（skill-cli-decouple）**：按 `v12-skills.txt` 白名单逐 skill symlink/junction 至 **`.agents/skills/`**（不再安装到 `.cursor/skills`）
+- `install.sh` / `install.ps1` 自检路径同步为 `.agents/skills/<skill>/SKILL.md`
+- symphony-ts 侧 bootstrap 片段已按新路径校验；bundle 未更新前 dispatch 会硬失败
 
 ## V1.2 薄 Prompt 片段（可粘贴至 WORKFLOW body）
 
 ```markdown
 ChangeRef = kebab-case({{ issue.identifier }})；仅操作 openspec/changes/<ChangeRef>/。
-Symphony 每 turn 注入 effective_phase、skill、produces 与 Policy 段 — 按注入执行，勿在正文写 Phase 路由表。
+Symphony 每 turn 注入 effective_phase、skill、produces、Skill Instructions 与 Policy 段 — 按注入执行，勿在正文写 Phase 路由表。
 ```
 
 ## WORKFLOW front matter 片段

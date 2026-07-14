@@ -41,12 +41,21 @@ export interface WorkflowWorkspaceConfig {
   root: string;
 }
 
-export type AgentHarnessKind = "codex" | "cursor";
+export type AgentHarnessKind = "codex" | "cursor" | "claude";
 
 export type CursorReusePolicy = "per_issue" | "fresh_each_run";
 
+export type ClaudeReusePolicy = CursorReusePolicy;
+
 /** Unattended Symphony runs Cursor CLI in force mode only. */
 export type CursorHarnessMode = "force";
+
+export type ClaudePermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan"
+  | "dontAsk";
 
 export interface WorkflowAgentConfig {
   harness: AgentHarnessKind;
@@ -85,9 +94,21 @@ export interface WorkflowCursorHarnessConfig {
   turnLogWorkspaceArtifact: boolean;
 }
 
+export interface WorkflowClaudeHarnessConfig {
+  command: string;
+  /** Optional Claude model id; omitted when null. */
+  model: string | null;
+  permissionMode: ClaudePermissionMode;
+  /** When set, passed as repeated `--allowedTools` flags. */
+  allowedTools: readonly string[] | null;
+  reusePolicy: ClaudeReusePolicy;
+  turnTimeoutMs: number;
+}
+
 export interface WorkflowHarnessesConfig {
   codex: WorkflowCodexConfig;
   cursor: WorkflowCursorHarnessConfig;
+  claude: WorkflowClaudeHarnessConfig;
 }
 
 export interface WorkflowServerConfig {

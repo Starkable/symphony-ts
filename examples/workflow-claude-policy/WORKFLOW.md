@@ -36,11 +36,10 @@ hooks:
     git status --short
 
 agent:
-  harness: cursor
+  harness: claude
   max_concurrent_agents: 3
   max_turns: 25
 
-# V1.2 artifact-driven workflow（编排仅 dispatch skill；步骤规则在 skill 内）
 workflow:
   version: "1.2"
   change_ref: kebab_case_issue_id
@@ -69,12 +68,16 @@ workflow:
       requires_pass: true
 
 harnesses:
-  cursor:
-    command: agent
-    mode: force
+  claude:
+    command: claude
+    permission_mode: acceptEdits
     reuse_policy: per_issue
     turn_timeout_ms: 3600000
-    turn_log_workspace_artifact: true
+    # allowed_tools:
+    #   - Bash
+    #   - Edit
+    #   - Write
+    #   - Read
 
 server:
   port: 4321
@@ -86,21 +89,24 @@ server:
 续跑上下文：第 {{ attempt }} 次 worker 续派。
 {% endif %}
 
-**Mode: v1.2-openspec** — 完整说明见 `docs/symphony-agent-workflow.md`。
+**Mode: v1.2-openspec + Claude Code** — 说明见 `docs/symphony-agent-workflow.md` 与 `docs/agent-harness.md`。
 
-## ChangeRef（硬绑定）
+## ChangeRef
 
-- `ChangeRef` = `{{ issue.identifier }}` 的 kebab-case（例 `LIN-42` → `lin-42`）
+- `ChangeRef` = kebab-case(`{{ issue.identifier }}`)
 - 仅操作 `openspec/changes/<ChangeRef>/`
-- **禁止** AskUserQuestion 选择 change 名称
 
 ## 规则
 
-1. 按 Symphony 每 turn 注入的 `effective_phase`、`/{skill}`、`produces` 执行唯一动作
-2. 阶段进度以 **产物文件** 为准；步骤细则见对应 Cursor Skill
-3. `requires_pass` 阶段须在产物 front matter 写 `status: pass` 后才算完成
-4. 禁止未授权 git push
+1. 按 Symphony 注入的 `effective_phase`、`skill` id、`produces` 与 **Skill Instructions** 执行（正文已内联，无需依赖 `.claude/skills` 发现）
+2. 进度以产物文件为准
+3. 禁止未授权 git push
 
 ## Skills
 
-策略包（`SYMPHONY_POLICY_ROOT` → `symphony-openspec-bundle`）install 后位于 `.agents/skills/`。
+策略包 install 后位于 `.agents/skills/`。完整 after_create 依赖 `bundle-agents-skills-install`。
+
+## Claude 无人值守提示
+
+- 默认 `permission_mode: acceptEdits`（自动批准文件编辑；shell/网络仍可能需 `allowed_tools` 或更宽的权限模式）
+- 会话按 `reuse_policy: per_issue` 写入 `.symphony/claude-session.json`，后续 turn 使用 `--resume`

@@ -18,7 +18,7 @@ Symphony-ts 将项目工作转化为隔离、自主的实现运行：从需求�
 - 需求平台凭据：
   - **Linear**：环境变量 `LINEAR_API_KEY`
   - **PMS（爱奇艺内部 Jira）**：`tracker.kind: pms` — 配置见 [docs/pms-tracker.md](docs/pms-tracker.md)，字段对照见 [docs/pms-field-mapping.md](docs/pms-field-mapping.md)
-- 支持 app-server 模式的 coding agent 运行时，例如 `codex app-server` 或 Cursor CLI
+- 支持 app-server / headless 模式的 coding agent：`codex`、Cursor CLI、Claude Code
 
 ### 安装
 
@@ -171,13 +171,14 @@ Linear 配置、`WORKFLOW.md` 与排障的完整 walkthrough 见 [docs/DEV_GUIDE
 | --- | --- |
 | Symphony 与 Linear 集成 | ✅ 已完成 |
 | PMS 只读 tracker（`tracker.kind: pms`） | ✅ 已完成 — [配置](docs/pms-tracker.md) · [字段对照](docs/pms-field-mapping.md) |
-| Cursor CLI agent harness | 🟡 进行中（[fix-cursor-cli-harness](openspec/changes/fix-cursor-cli-harness/)） |
-| Cursor Policy 工作流 | ✅ V1.1 — [symphony-agent-workflow.md](docs/symphony-agent-workflow.md)（独立仓 `symphony-openspec-bundle`） |
+| Cursor CLI agent harness | ✅ 可用（`agent.harness: cursor`） |
+| Cursor Policy 工作流 | ✅ V1.2 — [symphony-agent-workflow.md](docs/symphony-agent-workflow.md)（独立仓 `symphony-openspec-bundle` → `.agents/skills`） |
+| Codex Policy 样例 | ✅ [examples/workflow-codex-policy](examples/workflow-codex-policy/) |
+| Claude Code harness | ✅ 可用（`agent.harness: claude`，[examples/workflow-claude-policy](examples/workflow-claude-policy/)） |
 | 支持更多平台（如 GitHub Projects） | 🟡 计划中 |
-| 本地看板 GUI | 🟡 V1.1 — [docs/workflow-dashboard.md](docs/workflow-dashboard.md) |
-| 支持更多 coding agent（如 Claude Code 调度） | 🟡 计划中 |
+| 本地看板 GUI | ✅ MVP — [docs/workflow-dashboard.md](docs/workflow-dashboard.md)（hydrate / live SSE 可选未做） |
 
-Agent 无人值守 Policy（V1.1：Workpad + OpenSpec + 外部策略包）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。
+Agent 无人值守 Policy（**V1.2**：产物驱动 + `.agents/skills` 内联）详见 [docs/symphony-agent-workflow.md](docs/symphony-agent-workflow.md)。OpenSpec 提案清理总结见 [docs/openspec-change-log.md](docs/openspec-change-log.md)。
 
 若希望 Symphony 支持其他需求平台，欢迎提 issue 告知。
 
