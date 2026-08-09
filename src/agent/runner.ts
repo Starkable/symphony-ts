@@ -20,7 +20,6 @@ import {
 import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import { trackerStateMatches } from "../tracker/state-matching.js";
 import type { IssueTracker } from "../tracker/tracker.js";
-import { resolveWorkflowSkillPayload } from "../workflow/ensure-workflow-skill-ready.js";
 import { runMaterializationHookIfNeeded } from "../workflow/materialization-hook.js";
 import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
 import { isWorkflowAllComplete } from "../workflow/workflow-harness-stop.js";
@@ -247,10 +246,6 @@ export class AgentRunner {
                 issueIdentifier: issue.identifier,
                 workflow: this.config.workflow,
               });
-        const skillPayload = await resolveWorkflowSkillPayload({
-          workspacePath,
-          workflowDispatch,
-        });
         const prompt = await buildTurnPrompt({
           workflow: {
             promptTemplate: this.config.promptTemplate,
@@ -267,7 +262,6 @@ export class AgentRunner {
                   effectivePhaseId: workflowDispatch.effectivePhaseId,
                   skill: workflowDispatch.skill,
                   producesPath: workflowDispatch.producesPath,
-                  skillPayload,
                 },
         });
         const title = `${issue.identifier}: ${issue.title}`;

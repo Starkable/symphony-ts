@@ -90,13 +90,13 @@ describe("workflow-render V1.2", () => {
         phases: [
           {
             id: "proposal_review",
-            skill: "openspec-proposal-review",
+            skill: "symphony-proposal-review",
             produces: "openspec/changes/{change_ref}/proposal_review.md",
             requiresPass: true,
           },
           {
             id: "execute",
-            skill: "openspec-apply-change",
+            skill: "symphony-execute",
             produces: "openspec/changes/{change_ref}/execute.md",
             requiresPass: true,
           },

@@ -15,12 +15,6 @@ import type { StructuredLogger } from "../../../logging/structured-logger.js";
 import { trackerStateMatches } from "../../../tracker/state-matching.js";
 import type { IssueTracker } from "../../../tracker/tracker.js";
 import { resolveChangeRef } from "../../../workflow/change-ref-path.js";
-import { resolveWorkflowSkillPayload } from "../../../workflow/ensure-workflow-skill-ready.js";
-import { AgentSkillReadError } from "../../../workflow/read-agent-skill.js";
-import {
-  InvalidWorkflowSkillError,
-  WorkspaceSkillMissingError,
-} from "../../../workflow/validate-workspace-skills.js";
 import { runMaterializationHookIfNeeded } from "../../../workflow/materialization-hook.js";
 import { resolveWorkflowDispatchContext } from "../../../workflow/workflow-dispatch.js";
 import { isWorkflowAllComplete } from "../../../workflow/workflow-harness-stop.js";
@@ -466,45 +460,24 @@ export class CursorAgentHarness implements AgentHarness {
             workflow: this.config.workflow,
           });
 
-    try {
-      const skillPayload = await resolveWorkflowSkillPayload({
-        workspacePath: input.workspacePath,
-        workflowDispatch,
-      });
-
-      return await buildTurnPrompt({
-        workflow: {
-          promptTemplate: this.config.promptTemplate,
-        },
-        issue: input.issue,
-        attempt: input.attempt,
-        turnNumber: input.turnNumber,
-        maxTurns: this.config.agent.maxTurns,
-        workflowDispatch:
-          workflowDispatch === null
-            ? null
-            : {
-                changeRef: workflowDispatch.changeRef,
-                effectivePhaseId: workflowDispatch.effectivePhaseId,
-                skill: workflowDispatch.skill,
-                producesPath: workflowDispatch.producesPath,
-                skillPayload,
-              },
-      });
-    } catch (error) {
-      if (
-        error instanceof WorkspaceSkillMissingError ||
-        error instanceof InvalidWorkflowSkillError ||
-        error instanceof AgentSkillReadError
-      ) {
-        await this.logger?.error("skill_missing", error.message, {
-          skill: error.skill,
-          workspace_path: input.workspacePath,
-          issue_identifier: input.issue.identifier,
-        });
-      }
-      throw error;
-    }
+    return buildTurnPrompt({
+      workflow: {
+        promptTemplate: this.config.promptTemplate,
+      },
+      issue: input.issue,
+      attempt: input.attempt,
+      turnNumber: input.turnNumber,
+      maxTurns: this.config.agent.maxTurns,
+      workflowDispatch:
+        workflowDispatch === null
+          ? null
+          : {
+              changeRef: workflowDispatch.changeRef,
+              effectivePhaseId: workflowDispatch.effectivePhaseId,
+              skill: workflowDispatch.skill,
+              producesPath: workflowDispatch.producesPath,
+            },
+    });
   }
 
   private emitHarnessEvent(

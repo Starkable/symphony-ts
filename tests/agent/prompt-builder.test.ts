@@ -101,8 +101,8 @@ describe("prompt builder", () => {
     });
 
     expect(first).toBe("Initial ABC-123 attempt=3");
-    expect(second).toContain("Continue working on issue ABC-123");
-    expect(second).toContain("continuation turn 2 of 4");
+    expect(second).toContain("继续处理工作项 ABC-123");
+    expect(second).toContain("续跑 turn 2 / 4");
     expect(second).not.toContain("Initial ABC-123 attempt=3");
   });
 
@@ -116,8 +116,8 @@ describe("prompt builder", () => {
 
     expect(prompt).toContain("ABC-123");
     expect(prompt).toContain("Ship prompt rendering");
-    expect(prompt).toContain("Current tracker state: In Progress.");
-    expect(prompt).toContain("initial dispatch");
+    expect(prompt).toContain("当前 tracker 状态：In Progress。");
+    expect(prompt).toContain("首次调度");
   });
 
   it("appends PMS comments section when trackerComments present", async () => {
@@ -190,7 +190,7 @@ describe("prompt builder", () => {
     } satisfies Partial<PromptTemplateError>);
   });
 
-  it("appends V1.2 workflow dispatch with inlined skill instructions", async () => {
+  it("appends V1.2 workflow dispatch with skill declare guidance only", async () => {
     const prompt = await buildTurnPrompt({
       workflow: {
         promptTemplate: "Base prompt for {{ issue.identifier }}",
@@ -202,39 +202,36 @@ describe("prompt builder", () => {
       workflowDispatch: {
         changeRef: "abc-123",
         effectivePhaseId: "plan",
-        skill: "openspec-continue-change",
+        skill: "symphony-plan",
         producesPath: "openspec/changes/abc-123/tasks.md",
-        skillPayload: {
-          id: "openspec-continue-change",
-          description: "Continue the change",
-          body: "Write tasks.md for the change.",
-          sourcePath: "/ws/.agents/skills/openspec-continue-change/SKILL.md",
-        },
       },
     });
 
-    expect(prompt).toContain("Continue working on issue ABC-123");
+    expect(prompt).toContain("继续处理工作项 ABC-123");
     expect(prompt).toContain("effective_phase: plan");
-    expect(prompt).toContain("- skill: openspec-continue-change");
-    expect(prompt).not.toContain("- skill: /openspec-continue-change");
+    expect(prompt).toContain("- skill: symphony-plan");
+    expect(prompt).not.toContain("- skill: /symphony-plan");
     expect(prompt).not.toContain("handler:");
-    expect(prompt).toContain("## Skill Instructions:");
-    expect(prompt).toContain("Write tasks.md for the change.");
+    expect(prompt).toContain("请使用已安装的 skill symphony-plan");
+    expect(prompt).not.toContain("## Skill 说明");
+    expect(prompt).not.toContain("Write tasks.md for the change.");
     expect(prompt).toContain("openspec/changes/abc-123/tasks.md");
-    expect(prompt).toContain("## Symphony Policy (V1.2)");
+    expect(prompt).toContain("## Symphony 策略 (V1.2)");
     expect(prompt).toContain("禁止 AskUserQuestion");
     expect(prompt).toContain("openspec/changes/abc-123/");
   });
 
-  it("requires skillPayload when phase skill is set", () => {
-    expect(() =>
-      appendWorkflowDispatchSection("Base", {
-        changeRef: "abc-123",
-        effectivePhaseId: "plan",
-        skill: "openspec-continue-change",
-        producesPath: "openspec/changes/abc-123/tasks.md",
-      }),
-    ).toThrow(/requires skillPayload/);
+  it("builds workflow dispatch without requiring SKILL.md payload", () => {
+    const prompt = appendWorkflowDispatchSection("Base", {
+      changeRef: "abc-123",
+      effectivePhaseId: "plan",
+      skill: "symphony-plan",
+      producesPath: "openspec/changes/abc-123/tasks.md",
+    });
+
+    expect(prompt).toContain("- skill: symphony-plan");
+    expect(prompt).toContain("请使用已安装的 skill symphony-plan");
+    expect(prompt).not.toContain("## Skill 说明");
   });
 
   it("builds done-state workflow dispatch section with policy", () => {
@@ -246,15 +243,15 @@ describe("prompt builder", () => {
     });
 
     expect(prompt).toContain("effective_phase: done");
-    expect(prompt).toContain("All workflow artifacts are complete");
-    expect(prompt).toContain("## Symphony Policy (V1.2)");
+    expect(prompt).toContain("全部工作流产物已完成");
+    expect(prompt).toContain("## Symphony 策略 (V1.2)");
     expect(prompt).toContain("禁止跳步");
   });
 
   it("builds policy section with change ref path constraint", () => {
     const policy = buildSymphonyPolicySection("my-change");
 
-    expect(policy).toContain("## Symphony Policy (V1.2)");
+    expect(policy).toContain("## Symphony 策略 (V1.2)");
     expect(policy).toContain("openspec/changes/my-change/");
     expect(policy).toContain("禁止未授权 git push");
   });

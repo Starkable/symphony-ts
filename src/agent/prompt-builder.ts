@@ -6,10 +6,22 @@ import type {
   WorkflowDefinition,
 } from "../domain/model.js";
 import { ERROR_CODES } from "../errors/codes.js";
-import type { AgentSkillPayload } from "../workflow/read-agent-skill.js";
+import {
+  DEFAULT_WORKFLOW_PROMPT,
+  PMS_COMMENTS_SECTION_TITLE,
+  WORKFLOW_DONE_MESSAGE,
+  WORKFLOW_SECTION_TITLE,
+  buildContinuationPrompt,
+  buildSkillDeclareGuidance,
+  buildSymphonyPolicySection,
+} from "./prompts/index.js";
 
-export const DEFAULT_WORKFLOW_PROMPT =
-  "You are working on an issue from Linear.";
+export {
+  DEFAULT_WORKFLOW_PROMPT,
+  buildContinuationPrompt,
+  buildSymphonyPolicySection,
+  buildSkillDeclareGuidance,
+} from "./prompts/index.js";
 
 const liquidEngine = new Liquid({
   strictVariables: true,
@@ -49,8 +61,6 @@ export interface WorkflowDispatchInjection {
   skill: string;
   producesPath: string;
   changeRef: string;
-  /** 当前 phase 的 SKILL.md 载荷；done / 无 skill 时可为 null。 */
-  skillPayload?: AgentSkillPayload | null;
 }
 
 export interface BuildTurnPromptInput extends RenderPromptInput {
@@ -103,30 +113,6 @@ export async function buildTurnPrompt(
   return appendWorkflowDispatchSection(basePrompt, input.workflowDispatch);
 }
 
-export function buildSymphonyPolicySection(changeRef: string): string {
-  return [
-    "## Symphony Policy (V1.2)",
-    `- 仅操作 openspec/changes/${changeRef}/`,
-    "- 禁止 AskUserQuestion 选择 change 或阻塞性确认",
-    "- 只执行当前 effective_phase 对应 skill；禁止跳步",
-    "- 禁止未授权 git push",
-  ].join("\n");
-}
-
-export function buildSkillInvocationSection(skill: AgentSkillPayload): string {
-  const lines = [
-    `## Skill: ${skill.id}`,
-    skill.description.length > 0
-      ? `## Description: ${skill.description}`
-      : null,
-    "",
-    "## Skill Instructions:",
-    skill.body,
-  ].filter((line): line is string => line !== null);
-
-  return lines.join("\n");
-}
-
 export function appendWorkflowDispatchSection(
   basePrompt: string,
   dispatch: WorkflowDispatchInjection,
@@ -137,67 +123,32 @@ export function appendWorkflowDispatchSection(
     return [
       basePrompt,
       "",
-      "## Symphony Workflow (V1.2)",
+      WORKFLOW_SECTION_TITLE,
       `- change_ref: ${dispatch.changeRef}`,
       "- effective_phase: done",
-      "- All workflow artifacts are complete.",
+      `- ${WORKFLOW_DONE_MESSAGE}`,
       "",
       policySection,
     ].join("\n");
   }
 
   const skillId = dispatch.skill.trim();
-  const skillPayload = dispatch.skillPayload ?? null;
 
-  if (skillId.length > 0 && skillPayload === null) {
-    throw new PromptTemplateError(
-      "template_render_error",
-      `workflow dispatch for phase '${dispatch.effectivePhaseId}' requires skillPayload for skill '${skillId}'.`,
-    );
-  }
-
-  const sections = [
+  return [
     basePrompt,
     "",
-    "## Symphony Workflow (V1.2)",
+    WORKFLOW_SECTION_TITLE,
     `- change_ref: ${dispatch.changeRef}`,
     `- effective_phase: ${dispatch.effectivePhaseId}`,
     `- skill: ${skillId}`,
     `- produces: ${dispatch.producesPath}`,
-  ];
-
-  if (skillPayload !== null) {
-    sections.push(
-      "",
-      buildSkillInvocationSection(skillPayload),
-      "",
-      `请按上方 Skill Instructions 完成当前阶段，并将产物写到 ${dispatch.producesPath}。`,
-    );
-  }
-
-  sections.push("", policySection);
-  return sections.join("\n");
-}
-
-export function buildContinuationPrompt(input: {
-  issue: Issue;
-  attempt: number | null;
-  turnNumber: number;
-  maxTurns: number;
-}): string {
-  const attemptLine =
-    input.attempt === null
-      ? "This worker session started from the initial dispatch."
-      : `This worker session is running retry/continuation attempt ${input.attempt}.`;
-
-  return [
-    `Continue working on issue ${input.issue.identifier}: ${input.issue.title}.`,
-    `This is continuation turn ${input.turnNumber} of ${input.maxTurns} in the current worker session.`,
-    attemptLine,
-    `Current tracker state: ${input.issue.state}.`,
-    "Reuse the existing thread context and current workspace state.",
-    "Do not restate the original task prompt unless it is strictly needed.",
-    "Make the next best progress on the issue, then stop when this session has no further useful work to do.",
+    "",
+    buildSkillDeclareGuidance({
+      skillId,
+      producesPath: dispatch.producesPath,
+    }),
+    "",
+    policySection,
   ].join("\n");
 }
 
@@ -245,7 +196,7 @@ export function appendTrackerCommentsSection(
     return `${prefix}${comment.body}`;
   });
 
-  return [basePrompt, "", "## PMS 备注", ...lines].join("\n");
+  return [basePrompt, "", PMS_COMMENTS_SECTION_TITLE, ...lines].join("\n");
 }
 
 function toPromptTemplateError(error: unknown): PromptTemplateError {

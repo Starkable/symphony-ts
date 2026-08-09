@@ -1,4 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -72,62 +71,8 @@ describe("ClaudeAgentHarness", () => {
     expect(result.runAttempt.status).toBe("succeeded");
   });
 
-  it("fails when required workflow skill is missing under .agents/skills", async () => {
-    const workspacePath = "/tmp/workspaces/missing-skill";
-    const runCli = vi.fn();
-    const harness = new ClaudeAgentHarness({
-      config: buildHarnessConfig({
-        workflow: {
-          version: "1.2",
-          changeRefStrategy: "kebab_case_issue_id",
-          phases: [
-            {
-              id: "clarify",
-              skill: "openspec-new-change",
-              produces: "openspec/changes/{change_ref}/proposal.md",
-              requiresPass: false,
-            },
-          ],
-        },
-      }),
-      tracker: buildTracker(),
-      workspaceManager: {
-        createForIssue: vi.fn(async () => ({
-          path: workspacePath,
-          workspaceKey: "1",
-          createdNow: true,
-        })),
-      } as never,
-      runCli,
-    });
-
-    await expect(
-      harness.run({
-        issue: createIssue(),
-        attempt: null,
-      }),
-    ).rejects.toMatchObject({
-      name: "AgentRunnerError",
-      message: expect.stringContaining("openspec-new-change"),
-    });
-    expect(runCli).not.toHaveBeenCalled();
-  });
-
-  it("loads skill body into prompt when .agents/skills is present", async () => {
+  it("declares skill id in prompt without requiring .agents/skills on disk", async () => {
     const root = await createTempWorkspace();
-    const skillDir = join(
-      root,
-      ".agents",
-      "skills",
-      "openspec-new-change",
-    );
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(
-      join(skillDir, "SKILL.md"),
-      "---\ndescription: Clarify\n---\n\nCLAUDE_SKILL_INLINE\n",
-      "utf8",
-    );
-
     const runCli = vi
       .fn<(input: ClaudeCliRunInput) => Promise<ClaudeCliRunResult>>()
       .mockImplementationOnce(async (input) => createMockCliResult(input));
@@ -139,7 +84,7 @@ describe("ClaudeAgentHarness", () => {
         phases: [
           {
             id: "clarify",
-            skill: "openspec-new-change",
+            skill: "symphony-clarify",
             produces: "openspec/changes/{change_ref}/proposal.md",
             requiresPass: false,
           },
@@ -166,8 +111,11 @@ describe("ClaudeAgentHarness", () => {
       attempt: null,
     });
 
-    expect(runCli.mock.calls[0]?.[0]?.prompt).toContain("## Skill Instructions");
-    expect(runCli.mock.calls[0]?.[0]?.prompt).toContain("CLAUDE_SKILL_INLINE");
+    const prompt = runCli.mock.calls[0]?.[0]?.prompt ?? "";
+    expect(prompt).toContain("- skill: symphony-clarify");
+    expect(prompt).toContain("请使用已安装的 skill symphony-clarify");
+    expect(prompt).not.toContain("## Skill 说明");
+    expect(prompt).not.toContain("CLAUDE_SKILL_INLINE");
   });
 });
 

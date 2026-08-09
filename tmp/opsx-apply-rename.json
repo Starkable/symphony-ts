@@ -1,0 +1,89 @@
+﻿{
+  "changeName": "symphony-phase-skill-rename",
+  "changeDir": "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename",
+  "schemaName": "spec-driven",
+  "contextFiles": {
+    "proposal": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename\\proposal.md"
+    ],
+    "specs": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename\\specs\\bundle-skill-doc-polish\\spec.md",
+      "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename\\specs\\symphony-phase-skill-ids\\spec.md"
+    ],
+    "design": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename\\design.md"
+    ],
+    "tasks": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\symphony-phase-skill-rename\\tasks.md"
+    ]
+  },
+  "progress": {
+    "total": 12,
+    "complete": 0,
+    "remaining": 12
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "description": "1.1 灏嗗叚闃舵 skill 鐩綍閲嶅懡鍚嶄负 `symphony-clarify` / `symphony-proposal-review` / `symphony-plan` / `symphony-execute` / `symphony-verify` / `symphony-archive`锛涙洿鏂板悇 SKILL.md front matter `name`",
+      "done": false
+    },
+    {
+      "id": "2",
+      "description": "1.2 鏇存柊 `bootstrap/v12-skills.txt`锛氫粎鍒楁柊鍏樁娈?id + `symphony-v1-policy`锛涚Щ闄ゆ棫 `openspec-*` 闃舵鍚?,
+      "done": false
+    },
+    {
+      "id": "3",
+      "description": "1.3 鍏ㄦ枃妫€绱?bundle锛氭浛鎹㈠绾﹁〃銆丷EADME銆乻kill 姝ｆ枃浜ゅ弶寮曠敤涓殑鏃ч樁娈?skill id锛堣縼绉昏鏄庡彲淇濈暀鏃у悕瀵圭収锛?,
+      "done": false
+    },
+    {
+      "id": "4",
+      "description": "2.1 鍏樁娈?SKILL锛氬皢銆屼笂涓嬫枃渚濊禆銆嶆敹鏁涗负 `## 涓婁笅鏂囦緷璧朻 + `### 蹇呰` / `### 閫夎`锛堜繚鎸佹棦鏈夊繀璇昏涔夛級",
+      "done": false
+    },
+    {
+      "id": "5",
+      "description": "2.2 `symphony-verify`锛氬墠缃潯浠舵敼涓洪』瀛樺湪骞跺彲闃呰 `execute.md`锛屽缓璁?`status: pass`锛涗笌蹇呰琛ㄥ榻?,
+      "done": false
+    },
+    {
+      "id": "6",
+      "description": "2.3 鏇存柊 `docs/phase-artifact-contract.md` Skill 鍒椾负鏂?id锛涘繀瑕佹椂鏀瑰啓銆宻ymphony-* 鍒悕銆嶅巻鍙茶〃杩?,
+      "done": false
+    },
+    {
+      "id": "7",
+      "description": "3.1 鏇存柊 `likou/WORKFLOW.md`锛歚phases[].skill` 涓烘柊 id锛沗after_create` 鑷 `.agents\\skills\\symphony-clarify\\SKILL.md`",
+      "done": false
+    },
+    {
+      "id": "8",
+      "description": "3.2 鏇存柊 likou Mode/瀹夸富鏈鸿鏄庯細鍗曚粨榛樿锛涘浠撻』 `SYMPHONY_CATALOG_FILE`锛涗笌 before_run skip 涓€鑷?,
+      "done": false
+    },
+    {
+      "id": "9",
+      "description": "3.3 鏇存柊 symphony-ts `docs/symphony-workflow-v1-2-bundle-coordination.md`锛堝強鍏跺畠浠嶅垪鏃?skill 鐨?docs锛変腑鐨?skill 鏄犲皠琛?,
+      "done": false
+    },
+    {
+      "id": "10",
+      "description": "4.1 瀵圭収 `specs/symphony-phase-skill-ids`锛氱櫧鍚嶅崟 7 椤广€佹棤鏃ч樁娈电洰褰曘€乄ORKFLOW skill 鍧囨柊鍚?,
+      "done": false
+    },
+    {
+      "id": "11",
+      "description": "4.2 瀵圭収 `specs/bundle-skill-doc-polish`锛氶鏋舵爣棰樸€乿erify 璇皵銆丮ode/catalog 鏂囨",
+      "done": false
+    },
+    {
+      "id": "12",
+      "description": "4.3 锛堝彲閫夛級涓存椂 workspace 璺?`install.ps1`锛岀‘璁ら儴缃?`symphony-clarify` 绛変笖鑷璺緞鍙繃",
+      "done": false
+    }
+  ],
+  "state": "ready",
+  "instruction": "Read context files, work through pending tasks, mark complete as you go.\nPause if you hit blockers or need clarification."
+}

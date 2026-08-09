@@ -1,5 +1,10 @@
 import { type DocumentNode, parse } from "graphql";
 
+import {
+  LINEAR_GRAPHQL_DESCRIPTION,
+  LINEAR_GRAPHQL_QUERY_DESCRIPTION,
+  LINEAR_GRAPHQL_VARIABLES_DESCRIPTION,
+} from "../agent/prompts/index.js";
 import { ERROR_CODES } from "../errors/codes.js";
 import { TrackerError } from "../tracker/errors.js";
 import {
@@ -7,9 +12,6 @@ import {
   type LinearTrackerClientOptions,
 } from "../tracker/linear-client.js";
 import type { CodexDynamicTool } from "./app-server-client.js";
-
-const LINEAR_GRAPHQL_DESCRIPTION =
-  "Execute one GraphQL query or mutation against the configured Linear workspace using Symphony-managed auth.";
 
 type JsonObject = Record<string, unknown>;
 
@@ -65,11 +67,11 @@ export function createLinearGraphqlDynamicTool(
         query: {
           type: "string",
           minLength: 1,
-          description: "A single GraphQL query or mutation document.",
+          description: LINEAR_GRAPHQL_QUERY_DESCRIPTION,
         },
         variables: {
           type: "object",
-          description: "Optional GraphQL variables object.",
+          description: LINEAR_GRAPHQL_VARIABLES_DESCRIPTION,
         },
       },
     },

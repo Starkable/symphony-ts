@@ -96,25 +96,25 @@ hooks:
 #   change_ref: kebab_case_issue_id
 #   phases:
 #     - id: clarify
-#       skill: openspec-new-change
+#       skill: symphony-clarify
 #       produces: openspec/changes/{change_ref}/proposal.md
 #     - id: proposal_review
-#       skill: openspec-proposal-review
+#       skill: symphony-proposal-review
 #       produces: openspec/changes/{change_ref}/proposal_review.md
 #       requires_pass: true
 #     - id: plan
-#       skill: openspec-continue-change
+#       skill: symphony-plan
 #       produces: openspec/changes/{change_ref}/tasks.md
 #     - id: execute
-#       skill: openspec-apply-change
+#       skill: symphony-execute
 #       produces: openspec/changes/{change_ref}/execute.md
 #       requires_pass: true
 #     - id: verify
-#       skill: openspec-verify
+#       skill: symphony-verify
 #       produces: openspec/changes/{change_ref}/verification.md
 #       requires_pass: true
 #     - id: archive
-#       skill: openspec-archive-change
+#       skill: symphony-archive
 #       produces: openspec/changes/{change_ref}/archive.md
 #       requires_pass: true
 

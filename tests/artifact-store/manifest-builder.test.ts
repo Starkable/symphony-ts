@@ -199,13 +199,13 @@ const V12_WORKFLOW: SymphonyWorkflowConfig = {
   phases: [
     {
       id: "clarify",
-      skill: "openspec-new-change",
+      skill: "symphony-clarify",
       produces: "openspec/changes/{change_ref}/proposal.md",
       requiresPass: false,
     },
     {
       id: "proposal_review",
-      skill: "openspec-proposal-review",
+      skill: "symphony-proposal-review",
       produces: "openspec/changes/{change_ref}/proposal_review.md",
       requiresPass: true,
     },
@@ -271,7 +271,7 @@ describe("manifest-builder V1.2", () => {
         phases: [
           {
             id: "clarify",
-            skill: "openspec-new-change",
+            skill: "symphony-clarify",
             produces: "openspec/changes/{change_ref}/custom-proposal.md",
             requiresPass: false,
           },

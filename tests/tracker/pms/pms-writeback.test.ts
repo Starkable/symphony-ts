@@ -11,13 +11,13 @@ import { PmsWritebackService } from "../../../src/tracker/pms/pms-writeback.js";
 const V12_DONE_PHASES: WorkflowPhaseConfig[] = [
   {
     id: "clarify",
-    skill: "openspec-new-change",
+    skill: "symphony-clarify",
     produces: "openspec/changes/{change_ref}/proposal.md",
     requiresPass: false,
   },
   {
     id: "archive",
-    skill: "openspec-archive-change",
+    skill: "symphony-archive",
     produces: "openspec/changes/{change_ref}/archive.md",
     requiresPass: true,
   },

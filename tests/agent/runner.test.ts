@@ -151,8 +151,8 @@ describe("AgentRunner", () => {
 
     expect(result.turnsCompleted).toBe(2);
     expect(prompts[0]).toBe("Initial prompt for ABC-123 attempt=2");
-    expect(prompts[1]).toContain("Continue working on issue ABC-123");
-    expect(prompts[1]).toContain("continuation turn 2 of 3");
+    expect(prompts[1]).toContain("继续处理工作项 ABC-123");
+    expect(prompts[1]).toContain("续跑 turn 2 / 3");
     expect(prompts[1]).not.toContain("Initial prompt for ABC-123 attempt=2");
   });
 
@@ -285,22 +285,8 @@ describe("AgentRunner", () => {
     }
   });
 
-  it("inlines Skill Instructions from .agents/skills into Codex turn prompts", async () => {
+  it("declares skill id in Codex turn prompts without reading SKILL.md", async () => {
     const root = await createRoot();
-    const workspacePath = join(root, "issue-1");
-    const skillDir = join(
-      workspacePath,
-      ".agents",
-      "skills",
-      "openspec-new-change",
-    );
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(
-      join(skillDir, "SKILL.md"),
-      "---\ndescription: Clarify phase\n---\n\nCODEX_INLINE_SKILL_BODY\n",
-      "utf8",
-    );
-
     const prompts: string[] = [];
     const config = createConfig(root, "unused");
     config.workflow = {
@@ -309,7 +295,7 @@ describe("AgentRunner", () => {
       phases: [
         {
           id: "clarify",
-          skill: "openspec-new-change",
+          skill: "symphony-clarify",
           produces: "openspec/changes/{change_ref}/proposal.md",
           requiresPass: false,
         },
@@ -337,9 +323,10 @@ describe("AgentRunner", () => {
 
     expect(result.runAttempt.status).toBe("succeeded");
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("## Skill Instructions");
-    expect(prompts[0]).toContain("CODEX_INLINE_SKILL_BODY");
-    expect(prompts[0]).toContain("openspec-new-change");
+    expect(prompts[0]).toContain("- skill: symphony-clarify");
+    expect(prompts[0]).toContain("请使用已安装的 skill symphony-clarify");
+    expect(prompts[0]).not.toContain("## Skill 说明");
+    expect(prompts[0]).not.toContain("CODEX_INLINE_SKILL_BODY");
   });
 
   it("closes the session and still runs after_run best-effort when refresh fails", async () => {

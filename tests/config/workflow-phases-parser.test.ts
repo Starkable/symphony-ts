@@ -21,12 +21,12 @@ describe("workflow-phases-parser", () => {
       phases: [
         {
           id: "clarify",
-          skill: "openspec-new-change",
+          skill: "symphony-clarify",
           produces: "openspec/changes/{change_ref}/proposal.md",
         },
         {
           id: "proposal_review",
-          skill: "openspec-proposal-review",
+          skill: "symphony-proposal-review",
           produces: "openspec/changes/{change_ref}/proposal_review.md",
           requires_pass: true,
         },
@@ -35,7 +35,7 @@ describe("workflow-phases-parser", () => {
 
     expect(parsed?.version).toBe("1.2");
     expect(parsed?.phases).toHaveLength(2);
-    expect(parsed?.phases[0]?.skill).toBe("openspec-new-change");
+    expect(parsed?.phases[0]?.skill).toBe("symphony-clarify");
     expect(parsed?.phases[1]?.requiresPass).toBe(true);
   });
 
@@ -45,7 +45,7 @@ describe("workflow-phases-parser", () => {
         phases: [
           {
             id: "clarify",
-            handler: "openspec-new-change",
+            handler: "symphony-clarify",
             produces: "openspec/changes/{change_ref}/proposal.md",
           },
         ],
@@ -134,7 +134,7 @@ describe("workflow-phases-parser", () => {
         phases: [
           {
             id: "clarify",
-            skill: "openspec-new-change",
+            skill: "symphony-clarify",
             produces: "openspec/changes/{change_ref}/proposal.md",
             requiresPass: false,
           },
@@ -150,7 +150,7 @@ describe("workflow-phases-parser", () => {
         phases: [
           {
             id: "",
-            skill: "openspec-new-change",
+            skill: "symphony-clarify",
             produces: "x",
             requiresPass: false,
           },

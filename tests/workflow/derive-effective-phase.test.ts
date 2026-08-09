@@ -10,19 +10,19 @@ import { deriveEffectivePhase } from "../../src/workflow/derive-effective-phase.
 const DEFAULT_PHASES: WorkflowPhaseConfig[] = [
   {
     id: "clarify",
-    skill: "openspec-new-change",
+    skill: "symphony-clarify",
     produces: "openspec/changes/{change_ref}/proposal.md",
     requiresPass: false,
   },
   {
     id: "proposal_review",
-    skill: "openspec-proposal-review",
+    skill: "symphony-proposal-review",
     produces: "openspec/changes/{change_ref}/proposal_review.md",
     requiresPass: true,
   },
   {
     id: "plan",
-    skill: "openspec-continue-change",
+    skill: "symphony-plan",
     produces: "openspec/changes/{change_ref}/tasks.md",
     requiresPass: false,
   },
@@ -209,7 +209,7 @@ describe("deriveEffectivePhase", () => {
     const phases: WorkflowPhaseConfig[] = [
       {
         id: "archive",
-        skill: "openspec-archive-change",
+        skill: "symphony-archive",
         produces: "openspec/changes/{change_ref}/archive.md",
         requiresPass: true,
       },

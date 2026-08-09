@@ -43,7 +43,7 @@ harnesses:
 
 ## Codex + V1.2 Policy
 
-Skill 正文由编排内联（`.agents/skills`），与 Codex 原生 `$skill` 无关。样例：`examples/workflow-codex-policy/WORKFLOW.md`。手工清单：`docs/codex-policy-smoke.md`。联调依赖 bundle 安装到 `.agents/skills`（`bundle-agents-skills-install`）。
+编排只在 prompt 中**声明** `skill` id、`effective_phase`、`produces` 与 Policy，**不**读取或内联 `SKILL.md`。Skill 安装与实现由下游负责（推荐 bundle / hooks，非核心强制）。手工清单：`docs/codex-policy-smoke.md`。
 
 ## 扩展新 backend
 

@@ -1,0 +1,114 @@
+﻿{
+  "changeName": "bundle-skill-context-deps",
+  "changeDir": "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps",
+  "schemaName": "spec-driven",
+  "contextFiles": {
+    "proposal": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps\\proposal.md"
+    ],
+    "specs": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps\\specs\\skill-context-dependencies\\spec.md",
+      "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps\\specs\\workflow-consumer-alignment\\spec.md"
+    ],
+    "design": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps\\design.md"
+    ],
+    "tasks": [
+      "F:\\project\\symphony-ts\\openspec\\changes\\bundle-skill-context-deps\\tasks.md"
+    ]
+  },
+  "progress": {
+    "total": 17,
+    "complete": 0,
+    "remaining": 17
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "description": "1.1 鍦?`symphony-openspec-bundle/docs/phase-artifact-contract.md` 澧炲姞銆岄樁娈?鈫?蹇呰涓婃枃銆嶇煩闃碉紙涓?design 鍐崇瓥琛ㄤ竴鑷达細鍚?proposal / proposal_review / tasks / design路specs 鏈夊垯蹇呰绛夛級",
+      "done": false
+    },
+    {
+      "id": "2",
+      "description": "1.2 纭鐭╅樀涓庢棦鏈夈€岄樁娈?鈫?浜х墿 / 瀹屾垚鏉′欢銆嶈〃骞跺瓨涓斾笉浜掔浉鐭涚浘锛涜矾寰勪笌 phase id 鍕胯瘧",
+      "done": false
+    },
+    {
+      "id": "3",
+      "description": "2.1 鏇存柊 `openspec-new-change`锛氭彃鍏ャ€屼笂涓嬫枃渚濊禆銆嶅繀璇?閫夎锛堝伐鍗?澶囨敞锛涙棤鍏堝簭浜х墿锛?,
+      "done": false
+    },
+    {
+      "id": "4",
+      "description": "2.2 鏇存柊 `openspec-proposal-review`锛氬繀璇?`proposal.md`锛?澶氫粨 `scope.json`锛?,
+      "done": false
+    },
+    {
+      "id": "5",
+      "description": "2.3 鏇存柊 `openspec-continue-change`锛氬繀璇?`proposal.md`銆乣proposal_review.md`锛坧ass锛?,
+      "done": false
+    },
+    {
+      "id": "6",
+      "description": "2.4 鏇存柊 `openspec-apply-change`锛氬繀璇?proposal / proposal_review / tasks锛沝esign路specs 鏈夊垯蹇呰锛涘急鍖栥€屼粎闈?CLI contextFiles銆嶈〃杩?,
+      "done": false
+    },
+    {
+      "id": "7",
+      "description": "2.5 鏇存柊 `openspec-verify`锛氬繀璇?tasks Validation銆乣execute.md`锛涘彲閫夊洖鐪?proposal 楠屾敹鏂瑰悜",
+      "done": false
+    },
+    {
+      "id": "8",
+      "description": "2.6 鏇存柊 `openspec-archive-change`锛氬繀璇?`verification.md`锛坧ass锛夊強寤鸿鐨?execute/tasks 鐘舵€?,
+      "done": false
+    },
+    {
+      "id": "9",
+      "description": "2.7 鏇存柊 `symphony-v1-policy`锛氬鍔犲悇闃舵涓婁笅鏂囨€昏鎴栭摼鎺ュ埌 `phase-artifact-contract` 鐭╅樀",
+      "done": false
+    },
+    {
+      "id": "10",
+      "description": "3.1 灏?`after_create` skills 鑷鏀逛负 `.agents\\skills\\openspec-new-change\\SKILL.md`锛堜笌 `install.ps1` 涓€鑷达級",
+      "done": false
+    },
+    {
+      "id": "11",
+      "description": "3.2 淇瑙勫垯锛氬幓鎺?`/{skill}`锛屾敼涓?skill id + 閬靛惊 skill銆屼笂涓嬫枃渚濊禆銆嶅強 prompt 鐨?phase/produces/context",
+      "done": false
+    },
+    {
+      "id": "12",
+      "description": "3.3 瀵归綈 RSA 绉侀挜璺緞锛坒ront matter 涓庤〃鏍间竴鑷存垨鏀逛负绾幆澧冨彉閲忚鏄庯級",
+      "done": false
+    },
+    {
+      "id": "13",
+      "description": "3.4 鏍稿 `SYMPHONY_CATALOG_FILE` / catalog 璺緞锛氫慨姝ｄ负鐜板瓨鏂囦欢鎴栫Щ闄ゅけ鏁堝紩鐢ㄥ苟璇存槑鏇夸唬",
+      "done": false
+    },
+    {
+      "id": "14",
+      "description": "3.5 绉婚櫎 WORKFLOW 涓槑鏂?OAuth token/secret锛屾敼涓虹幆澧冨彉閲忓紩鐢紙浠呮枃妗ｅ彉閲忓悕锛?,
+      "done": false
+    },
+    {
+      "id": "15",
+      "description": "4.1 瀵圭収 `specs/skill-context-dependencies/spec.md`锛氭娊鏌ユ瘡涓?SKILL 鍧囨湁銆屼笂涓嬫枃渚濊禆銆嶈妭涓?execute 鍚?proposal+review+tasks",
+      "done": false
+    },
+    {
+      "id": "16",
+      "description": "4.2 瀵圭収 `specs/workflow-consumer-alignment/spec.md`锛氱‘璁?hooks 璺緞銆佽鍒欏啓娉曘€佹棤鏄庢枃瀵嗛挜銆乸hases 琛ㄦ湭涔辨敼",
+      "done": false
+    },
+    {
+      "id": "17",
+      "description": "4.3 锛堝彲閫夛級`install.ps1` 瑁呭埌涓存椂 workspace 鍚庣‘璁?`.agents/skills` 瀛樺湪涓旇嚜妫€閫昏緫鍙繃",
+      "done": false
+    }
+  ],
+  "state": "ready",
+  "instruction": "Read context files, work through pending tasks, mark complete as you go.\nPause if you hit blockers or need clarification."
+}

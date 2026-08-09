@@ -37,31 +37,31 @@ workflow:
   change_ref: kebab_case_issue_id
   phases:
     - id: clarify
-      skill: openspec-new-change
+      skill: symphony-clarify
       produces: openspec/changes/{change_ref}/proposal.md
     - id: proposal_review
-      skill: openspec-proposal-review
+      skill: symphony-proposal-review
       produces: openspec/changes/{change_ref}/proposal_review.md
       requires_pass: true
     - id: plan
-      skill: openspec-continue-change
+      skill: symphony-plan
       produces: openspec/changes/{change_ref}/tasks.md
     - id: execute
-      skill: openspec-apply-change
+      skill: symphony-execute
       produces: openspec/changes/{change_ref}/execute.md
       requires_pass: true
     - id: verify
-      skill: openspec-verify
+      skill: symphony-verify
       produces: openspec/changes/{change_ref}/verification.md
       requires_pass: true
     - id: archive
-      skill: openspec-archive-change
+      skill: symphony-archive
       produces: openspec/changes/{change_ref}/archive.md
       requires_pass: true
 ```
 
-- `skill` 为 **Agent skill id**（安装于 `.agents/skills/<id>/SKILL.md`）；不接受 `handler` 别名
-- 编排器在 workspace 每次 turn 组 prompt 前校验并读取 `.agents/skills/<skill>/SKILL.md`，将正文内联进 prompt（不依赖 CLI 原生 `/skill`）
+- `skill` 为 **Agent skill id**（由下游安装到 agent 可发现的位置）；不接受 `handler` 别名
+- 编排器在每次 turn 只**声明** skill id，**不**读取或内联 `SKILL.md`；不因 workspace 缺少 skill 文件而失败
 - Dashboard 与 `deriveEffectivePhase` 共用 `workflow.phases[].produces` 映射（非硬编码文件名表）
 - `requires_pass: true` 且 `status: fail` 时 Dashboard 阶段显示「未通过」，issue 仍可续跑重试
 
@@ -94,24 +94,24 @@ for phase in workflow.phases（有序）:
 WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远程等）。Symphony 追加：
 
 - `effective_phase`、`skill`（Agent skill id，无前导 `/`）、展开后的 `produces`
-- **`## Skill Instructions`**：内联 `.agents/skills/<id>/SKILL.md` 正文（与 CLI 无关）
-- **`## Symphony Policy (V1.2)`** 横切硬约束（ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push）
+- 弱引导：请使用已安装的 skill `<id>` 完成当前阶段（**不**内联 SKILL.md 正文）
+- **`## Symphony 策略 (V1.2)`** 横切硬约束（ChangeRef 目录、禁止 AskUserQuestion、禁止跳步、禁止未授权 push）
 
 ### V1.2 Skills 索引（白名单 7 个）
 
-由 `symphony-openspec-bundle` 的 `bootstrap/v12-skills.txt` 安装至 **`.agents/skills/`**：
+由下游（推荐 `symphony-openspec-bundle` 的 `bootstrap/v12-skills.txt`）安装到 **agent 可发现的位置**（常见为 workspace `.agents/skills/`，非 Symphony 核心强制）：
 
 | 类型 | Skill |
 |------|-------|
 | 横切 | `symphony-v1-policy`（查阅；硬约束由 Prompt Policy 段注入） |
-| clarify | `openspec-new-change` |
-| proposal_review | `openspec-proposal-review` |
-| plan | `openspec-continue-change` |
-| execute | `openspec-apply-change` |
-| verify | `openspec-verify` |
-| archive | `openspec-archive-change` |
+| clarify | `symphony-clarify` |
+| proposal_review | `symphony-proposal-review` |
+| plan | `symphony-plan` |
+| execute | `symphony-execute` |
+| verify | `symphony-verify` |
+| archive | `symphony-archive` |
 
-> 已移除：`openspec-propose`、`openspec-explore`、`symphony-*` V1.1 别名；已移除 `handler` 配置别名与对 `.cursor/skills` 的 Policy 依赖。
+> 阶段 skill 规范 id 为 `symphony-<phase>`（与 IDE 上游 `openspec-*` 脱钩）。已移除：`openspec-propose`、`openspec-explore`、V1.1 handler 时代别名；已移除 `handler` 配置别名与对 `.cursor/skills` 的 Policy 依赖。
 
 ### 与 orchestrator 的边界
 
@@ -161,7 +161,7 @@ WORKFLOW Markdown 正文保持**薄**（角色、ChangeRef 规则、不提交远
 1. `openspec --version`（校验宿主机已装 CLI，**不**执行 install）
 2. 若不存在 `openspec/config.yaml` → `openspec init --tools none`
 3. 设置 `SYMPHONY_POLICY_ROOT` 指向 **symphony-openspec-bundle**；调用 `bootstrap/install.sh`（默认 skills **symlink/junction**，非拷贝）
-4. 自检：`test -f openspec/config.yaml` 与 `.agents/skills/openspec-new-change/SKILL.md`
+4. 自检：`test -f openspec/config.yaml` 与 `.agents/skills/symphony-clarify/SKILL.md`
 
 可复用片段：[docs/snippets/openspec-workspace-bootstrap.sh](./snippets/openspec-workspace-bootstrap.sh)
 
@@ -217,10 +217,10 @@ clarify ──C0──► proposal_review ──P2──► plan ──P1──�
 |-------|-------------------|-------------|------|
 | `clarify` | explore + 写 `proposal.md` | **否** | C0 澄清，产出需求提案 |
 | `proposal_review` | 策略包 `symphony-提案评审` | **否** | 输出 `评审报告.md` + `REVIEW_REPORT` |
-| `plan` | `openspec-continue-change` 至 tasks | **否** | **不用**默认 ff-change |
-| `execute` | `openspec-apply-change` | **是** | 按 tasks 实现 |
+| `plan` | `symphony-plan` 至 tasks | **否** | **不用**默认 ff-change |
+| `execute` | `symphony-execute` | **是** | 按 tasks 实现 |
 | `verify` | 主 agent 跑 `tasks.md` 的 `## Validation` | **否** | 输出 `VERIFICATION_REPORT` |
-| `archive` | `openspec-archive-change` + 归档说明 | 文档 | |
+| `archive` | `symphony-archive` + 归档说明 | 文档 | |
 | `done` | — | **否** | 本 issue run 结束 |
 | `failed` | — | **否** | 澄清/环境失败，正常结束 turn |
 
@@ -322,16 +322,16 @@ Checks:
 
 ### Skills 索引（V1.1 Legacy）
 
-> **已废弃**：V1.2 请使用上文 [V1.2 Skills 索引](#v12-skills-索引白名单-7-个)。以下仅供历史 workspace 对照。
+> **已废弃**：新 WORKFLOW 请使用上文 [V1.2 Skills 索引](#v12-skills-索引白名单-7-个)（规范 id：`symphony-<phase>`）。下表仅供更早历史 workspace 对照，**勿**再写入新配置。
 
-| Phase | Skills |
+| Phase | Skills（历史对照） |
 |-------|--------|
-| clarify | ~~`symphony-clarify`、`openspec-explore`~~、`openspec-new-change` |
-| proposal_review | `symphony-proposal-review` |
-| plan | `symphony-plan`、`openspec-continue-change` |
-| execute | `openspec-apply-change` |
-| verify | `symphony-verify` |
-| archive | `openspec-archive-change` |
+| clarify | 曾用 `openspec-explore` / `openspec-new-change` 等 |
+| proposal_review | 曾用策略包中文名或 `openspec-proposal-review` |
+| plan | 曾用 `openspec-continue-change` |
+| execute | 曾用 `openspec-apply-change` |
+| verify | 曾用多种 verify 命名 |
+| archive | 曾用 `openspec-archive-change` |
 | 横切 | `symphony-v1-policy` |
 
 V1.1 **不使用** `.agents/skills`、commit、push、subagent skills。
