@@ -34,6 +34,15 @@ export async function resolveScopeJsonPath(input: {
   workspacePath: string;
   changeRef: string;
 }): Promise<string | null> {
+  const v13Relative = join("artifacts", input.changeRef, "scope.json").replace(
+    /\\/g,
+    "/",
+  );
+  const v13Absolute = join(input.workspacePath, v13Relative);
+  if (await isFile(v13Absolute)) {
+    return v13Relative;
+  }
+
   return await resolveArtifactRelativePath({
     workspacePath: input.workspacePath,
     changeRef: input.changeRef,
@@ -42,6 +51,16 @@ export async function resolveScopeJsonPath(input: {
       input.changeRef,
     ),
   });
+}
+
+async function isFile(path: string): Promise<boolean> {
+  try {
+    const { stat } = await import("node:fs/promises");
+    const info = await stat(path);
+    return info.isFile();
+  } catch {
+    return false;
+  }
 }
 
 export async function loadScopeJson(input: {

@@ -16,8 +16,11 @@ import { trackerStateMatches } from "../../../tracker/state-matching.js";
 import type { IssueTracker } from "../../../tracker/tracker.js";
 import { resolveChangeRef } from "../../../workflow/change-ref-path.js";
 import { runMaterializationHookIfNeeded } from "../../../workflow/materialization-hook.js";
-import { resolveWorkflowDispatchContext } from "../../../workflow/workflow-dispatch.js";
+import { buildWorkflowPromptDispatch } from "../../../workflow/build-workflow-prompt-dispatch.js";
+import { isWorkflowV13 } from "../../../workflow/workflow-version.js";
 import { isWorkflowAllComplete } from "../../../workflow/workflow-harness-stop.js";
+import { processV13TurnEnd } from "../../../workflow/workflow-v13-turn-end.js";
+import { readRunState } from "../../../workflow/run-state.js";
 import { WorkspaceHookRunner } from "../../../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../../../workspace/path-safety.js";
 import { WorkspaceManager } from "../../../workspace/workspace-manager.js";
@@ -187,6 +190,20 @@ export class CursorAgentHarness implements AgentHarness {
         });
 
         runAttempt.status = "building_prompt";
+        if (
+          this.config.workflow !== null &&
+          isWorkflowV13(this.config.workflow)
+        ) {
+          const runState = await readRunState(workspacePath);
+          if (
+            runState !== null &&
+            runState.lastHarnessStageId !== null &&
+            runState.lastHarnessStageId !== runState.currentStageId
+          ) {
+            await clearCursorSession(workspacePath);
+            chatId = null;
+          }
+        }
         await runMaterializationHookIfNeeded({
           hooks: this.hooks,
           workspacePath,
@@ -384,6 +401,24 @@ export class CursorAgentHarness implements AgentHarness {
 
         if (harnessEvent.kind === "turn_completed") {
           if (
+            this.config.workflow !== null &&
+            isWorkflowV13(this.config.workflow)
+          ) {
+            const turnEnd = await processV13TurnEnd({
+              workspacePath,
+              changeRef: resolveChangeRef(issue.identifier),
+              workflow: this.config.workflow,
+            });
+            if (turnEnd.intakeRejected) {
+              break;
+            }
+            if (turnEnd.stageAdvanced) {
+              await clearCursorSession(workspacePath);
+              chatId = null;
+            }
+          }
+
+          if (
             await isWorkflowAllComplete({
               workspacePath,
               issueIdentifier: issue.identifier,
@@ -392,7 +427,7 @@ export class CursorAgentHarness implements AgentHarness {
           ) {
             await this.logger?.info(
               "harness_stop_workflow_done",
-              "Stopping harness because V1.2 workflow artifacts are complete.",
+              "Stopping harness because workflow run is complete.",
               {
                 issue_identifier: issue.identifier,
                 turn_number: turnNumber,
@@ -451,14 +486,14 @@ export class CursorAgentHarness implements AgentHarness {
     chatId: string | null;
     workspacePath: string;
   }): Promise<string> {
-    const workflowDispatch =
-      this.config.workflow === null
-        ? null
-        : await resolveWorkflowDispatchContext({
-            workspacePath: input.workspacePath,
-            issueIdentifier: input.issue.identifier,
-            workflow: this.config.workflow,
-          });
+    const usesServicePrompts =
+      this.config.workflow !== null &&
+      isWorkflowV13(this.config.workflow);
+    const workflowDispatch = await buildWorkflowPromptDispatch({
+      config: this.config,
+      workspacePath: input.workspacePath,
+      issue: input.issue,
+    });
 
     return buildTurnPrompt({
       workflow: {
@@ -468,15 +503,8 @@ export class CursorAgentHarness implements AgentHarness {
       attempt: input.attempt,
       turnNumber: input.turnNumber,
       maxTurns: this.config.agent.maxTurns,
-      workflowDispatch:
-        workflowDispatch === null
-          ? null
-          : {
-              changeRef: workflowDispatch.changeRef,
-              effectivePhaseId: workflowDispatch.effectivePhaseId,
-              skill: workflowDispatch.skill,
-              producesPath: workflowDispatch.producesPath,
-            },
+      workflowUsesServicePrompts: usesServicePrompts,
+      workflowDispatch,
     });
   }
 

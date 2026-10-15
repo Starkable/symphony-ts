@@ -1,6 +1,12 @@
 import { ERROR_CODES } from "../errors/codes.js";
+import { defaultV13PrimaryOutputLogicalName } from "../workflow/v13-stage-catalog.js";
 import { validateSkillNameFormat } from "../workflow/validate-workspace-skills.js";
-import type { SymphonyWorkflowConfig, WorkflowPhaseConfig } from "./types.js";
+import type {
+  SymphonyWorkflowConfig,
+  WorkflowDomain,
+  WorkflowGateKind,
+  WorkflowPhaseConfig,
+} from "./types.js";
 
 export class WorkflowPhasesParseError extends Error {
   readonly code: string;
@@ -35,6 +41,9 @@ export function parseSymphonyWorkflowConfig(
     throw new WorkflowPhasesParseError("workflow.phases must be an array.");
   }
 
+  const version = readString(record.version);
+  const isV13 = version === "1.3";
+
   const phases: WorkflowPhaseConfig[] = [];
   const seenIds = new Set<string>();
 
@@ -68,19 +77,51 @@ export function parseSymphonyWorkflowConfig(
       );
     }
 
-    const produces = readNonEmptyString(phaseRecord.produces);
+    const producesRaw = readNonEmptyString(phaseRecord.produces);
+    const produces =
+      producesRaw ??
+      (isV13
+        ? `artifacts/{change_ref}/${defaultV13PrimaryOutputLogicalName(id)}`
+        : null);
     if (produces === null) {
       throw new WorkflowPhasesParseError(
         `workflow.phases[${index}].produces must be a non-empty string.`,
       );
     }
 
-    phases.push({
+    const phase: WorkflowPhaseConfig = {
       id,
       skill,
       produces,
       requiresPass: readBoolean(phaseRecord.requires_pass) ?? false,
-    });
+    };
+    if (isV13) {
+      const domain = readDomain(phaseRecord.domain);
+      if (domain !== undefined) {
+        phase.domain = domain;
+      }
+      const readsFrom = readStringArray(phaseRecord.reads_from);
+      if (readsFrom !== undefined) {
+        phase.readsFrom = readsFrom;
+      }
+      const outputSchema = readString(phaseRecord.output_schema);
+      if (outputSchema !== null) {
+        phase.outputSchema = outputSchema;
+      }
+      const outputs = readStringArray(phaseRecord.outputs);
+      if (outputs !== undefined) {
+        phase.outputs = outputs;
+      }
+      const gates = readGateKinds(phaseRecord.gates);
+      if (gates !== undefined) {
+        phase.gates = gates;
+      }
+      const shellCommand = readString(phaseRecord.shell_command);
+      if (shellCommand !== null) {
+        phase.shellCommand = shellCommand;
+      }
+    }
+    phases.push(phase);
   }
 
   if (phases.length === 0) {
@@ -90,7 +131,7 @@ export function parseSymphonyWorkflowConfig(
   }
 
   return {
-    version: readString(record.version),
+    version,
     changeRefStrategy: readString(record.change_ref),
     phases,
   };
@@ -156,4 +197,42 @@ function readNonEmptyString(value: unknown): string | null {
 
 function readBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
+function readDomain(value: unknown): WorkflowDomain | undefined {
+  if (value === "analysis" || value === "implement") {
+    return value;
+  }
+  return undefined;
+}
+
+const GATE_KINDS = new Set<WorkflowGateKind>([
+  "schema_valid",
+  "shell",
+  "manual",
+  "optional_output",
+]);
+
+function readGateKinds(value: unknown): WorkflowGateKind[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const gates: WorkflowGateKind[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string" && GATE_KINDS.has(entry as WorkflowGateKind)) {
+      gates.push(entry as WorkflowGateKind);
+    }
+  }
+  return gates.length > 0 ? gates : undefined;
 }

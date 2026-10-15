@@ -8,7 +8,10 @@ import type {
   SymphonyWorkflowConfig,
   WorkflowPhaseConfig,
 } from "../../src/config/types.js";
-import { isWorkflowAllComplete } from "../../src/workflow/workflow-harness-stop.js";
+import {
+  isWorkflowAllComplete,
+  shouldReleaseOrchestratorClaimAfterWorker,
+} from "../../src/workflow/workflow-harness-stop.js";
 
 const DEFAULT_PHASES: WorkflowPhaseConfig[] = [
   {
@@ -115,6 +118,36 @@ describe("isWorkflowAllComplete", () => {
       workspacePath,
       issueIdentifier: "BCS-423",
       workflow: workflowConfig(DEFAULT_PHASES),
+    });
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("shouldReleaseOrchestratorClaimAfterWorker", () => {
+  it("returns true for V1.3 intake rejected review.json", async () => {
+    const workspacePath = await createWorkspace();
+    await writeRelative(
+      workspacePath,
+      "artifacts/bcs-9/review.json",
+      JSON.stringify({ status: "rejected", comment: "缺少范围" }),
+    );
+
+    const result = await shouldReleaseOrchestratorClaimAfterWorker({
+      workspacePath,
+      issueIdentifier: "BCS-9",
+      workflow: {
+        version: "1.3",
+        changeRefStrategy: null,
+        phases: [
+          {
+            id: "intake_review",
+            skill: "stage-intake-review",
+            produces: "artifacts/{change_ref}/review.json",
+            requiresPass: false,
+          },
+        ],
+      },
     });
 
     expect(result).toBe(true);

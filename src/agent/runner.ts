@@ -21,7 +21,11 @@ import { applyCodexEventToSession } from "../logging/session-metrics.js";
 import { trackerStateMatches } from "../tracker/state-matching.js";
 import type { IssueTracker } from "../tracker/tracker.js";
 import { runMaterializationHookIfNeeded } from "../workflow/materialization-hook.js";
-import { resolveWorkflowDispatchContext } from "../workflow/workflow-dispatch.js";
+import { buildWorkflowPromptDispatch } from "../workflow/build-workflow-prompt-dispatch.js";
+import { isWorkflowV13 } from "../workflow/workflow-version.js";
+import { processV13TurnEnd } from "../workflow/workflow-v13-turn-end.js";
+import { resolveChangeRef } from "../workflow/change-ref-path.js";
+import { readRunState } from "../workflow/run-state.js";
 import { isWorkflowAllComplete } from "../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { validateWorkspaceCwd } from "../workspace/path-safety.js";
@@ -43,6 +47,7 @@ export interface AgentRunnerCodexClient {
     title: string;
   }): Promise<CodexTurnResult>;
   continueTurn(prompt: string, title: string): Promise<CodexTurnResult>;
+  resetThreadForNewStage?(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -220,6 +225,8 @@ export class AgentRunner {
       });
       abortController.bindClient(client);
 
+      let useContinuationTurn = false;
+
       for (
         let turnNumber = 1;
         turnNumber <= this.config.agent.maxTurns;
@@ -232,20 +239,36 @@ export class AgentRunner {
           liveSession,
         });
         runAttempt.status = "building_prompt";
+        if (
+          this.config.workflow !== null &&
+          isWorkflowV13(this.config.workflow)
+        ) {
+          const runState = await readRunState(workspacePath);
+          if (
+            runState !== null &&
+            runState.lastHarnessStageId !== null &&
+            runState.lastHarnessStageId !== runState.currentStageId
+          ) {
+            if (client.resetThreadForNewStage !== undefined) {
+              await client.resetThreadForNewStage();
+            }
+            useContinuationTurn = false;
+          }
+        }
         await runMaterializationHookIfNeeded({
           hooks: this.hooks,
           workspacePath,
           issueIdentifier: issue.identifier,
           workflow: this.config.workflow,
         });
-        const workflowDispatch =
-          this.config.workflow === null
-            ? null
-            : await resolveWorkflowDispatchContext({
-                workspacePath,
-                issueIdentifier: issue.identifier,
-                workflow: this.config.workflow,
-              });
+        const usesServicePrompts =
+          this.config.workflow !== null &&
+          isWorkflowV13(this.config.workflow);
+        const workflowDispatch = await buildWorkflowPromptDispatch({
+          config: this.config,
+          workspacePath,
+          issue,
+        });
         const prompt = await buildTurnPrompt({
           workflow: {
             promptTemplate: this.config.promptTemplate,
@@ -254,24 +277,17 @@ export class AgentRunner {
           attempt: input.attempt,
           turnNumber,
           maxTurns: this.config.agent.maxTurns,
-          workflowDispatch:
-            workflowDispatch === null
-              ? null
-              : {
-                  changeRef: workflowDispatch.changeRef,
-                  effectivePhaseId: workflowDispatch.effectivePhaseId,
-                  skill: workflowDispatch.skill,
-                  producesPath: workflowDispatch.producesPath,
-                },
+          workflowUsesServicePrompts: usesServicePrompts,
+          workflowDispatch,
         });
         const title = `${issue.identifier}: ${issue.title}`;
 
-        runAttempt.status =
-          turnNumber === 1 ? "initializing_session" : "streaming_turn";
-        lastTurn =
-          turnNumber === 1
-            ? await client.startSession({ prompt, title })
-            : await client.continueTurn(prompt, title);
+        runAttempt.status = useContinuationTurn
+          ? "streaming_turn"
+          : "initializing_session";
+        lastTurn = useContinuationTurn
+          ? await client.continueTurn(prompt, title)
+          : await client.startSession({ prompt, title });
         rateLimits = lastTurn.rateLimits;
 
         applyCodexEventToSession(liveSession, {
@@ -298,6 +314,28 @@ export class AgentRunner {
 
         if (lastTurn.status === "completed") {
           if (
+            this.config.workflow !== null &&
+            isWorkflowV13(this.config.workflow)
+          ) {
+            const turnEnd = await processV13TurnEnd({
+              workspacePath,
+              changeRef: resolveChangeRef(issue.identifier),
+              workflow: this.config.workflow,
+            });
+            if (turnEnd.intakeRejected) {
+              break;
+            }
+            if (turnEnd.stageAdvanced) {
+              if (client.resetThreadForNewStage !== undefined) {
+                await client.resetThreadForNewStage();
+              }
+              useContinuationTurn = false;
+            } else {
+              useContinuationTurn = true;
+            }
+          }
+
+          if (
             await isWorkflowAllComplete({
               workspacePath,
               issueIdentifier: issue.identifier,
@@ -309,6 +347,10 @@ export class AgentRunner {
         }
 
         if (!this.isIssueStillActive(issue)) {
+          break;
+        }
+
+        if (lastTurn.status !== "completed") {
           break;
         }
       }

@@ -174,6 +174,38 @@ export class CodexAppServerClient {
     });
   }
 
+  /** Start a new thread (V1.3 stage boundary) while keeping the app-server process. */
+  async resetThreadForNewStage(): Promise<void> {
+    await this.ensureStarted();
+    if (this.currentTurn !== null) {
+      throw new CodexAppServerClientError(
+        "Cannot reset thread while a turn is running.",
+        ERROR_CODES.codexProtocolError,
+      );
+    }
+
+    const threadResult = await this.request("thread/start", {
+      approvalPolicy: this.options.approvalPolicy,
+      sandbox: this.options.threadSandbox,
+      cwd: this.options.cwd,
+      tools: this.getAdvertisedTools(),
+    });
+
+    const threadId = extractNestedString(threadResult, [
+      "result",
+      "thread",
+      "id",
+    ]);
+    if (threadId === null) {
+      throw new CodexAppServerClientError(
+        "thread/start did not include result.thread.id.",
+        ERROR_CODES.codexHandshakeFailed,
+      );
+    }
+
+    this.threadId = threadId;
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.rejectPending(

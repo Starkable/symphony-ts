@@ -337,7 +337,7 @@ export class PmsWritebackService {
 function toWorkpadWritebackSignal(
   signal: Exclude<ResolvedWritebackSignal, { kind: "none" }>,
 ): WorkpadWritebackSignal {
-  if (signal.kind === "clarify_blocked") {
+  if (signal.kind === "clarify_blocked" || signal.kind === "intake_rejected") {
     return {
       kind: "clarify_blocked",
       commentBody: signal.commentBody,

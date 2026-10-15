@@ -2,7 +2,8 @@
 
 本文档定义 symphony-ts **Policy 层**编排契约。
 
-**V1.2（推荐）**：产物为唯一进度真相、`WORKFLOW.md` 唯一配置、无 workpad — 见 [V1.2 产物驱动模式](#v12-产物驱动模式)。  
+**V1.3（状态机）**：run state + Gate 推进阶段、服务内中文 Composer、`artifacts/{change_ref}/` — 见 [symphony-agent-workflow-v1-3.md](./symphony-agent-workflow-v1-3.md)。  
+**V1.2**：产物扫盘推导 phase — 见 [V1.2 产物驱动模式](#v12-产物驱动模式)。  
 **V1.1（legacy）**：workpad Phase/Gate + `.symphony/workflow/phases/` 中文报告 — 见 [V1 OpenSpec 默认模式](#v1-openspec-默认模式)。  
 **增强（V2）**：Subagent 验证、blocked 等人、commit/push/handoff — 见 [V2 模式](#v2-模式subagent--git--人审)。
 

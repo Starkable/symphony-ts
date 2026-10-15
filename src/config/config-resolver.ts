@@ -65,6 +65,7 @@ import type {
   WorkflowCursorHarnessConfig,
   WorkflowTrackerOAuthConfig,
 } from "./types.js";
+import { isWorkflowV13 } from "../workflow/workflow-version.js";
 import {
   parseSymphonyWorkflowConfig,
   validateSymphonyWorkflowConfig,
@@ -96,6 +97,7 @@ export function resolveWorkflowConfig(
   const observability = asRecord(config.observability);
   const artifactStore = asRecord(config.artifact_store);
   const workflowConfig = parseSymphonyWorkflowConfig(config.workflow);
+  const serviceManagedPrompts = isWorkflowV13(workflowConfig);
   const resolvedCodex = resolveCodexHarnessConfig(codex, harnessesCodex);
   const resolvedCursor = resolveCursorHarnessConfig(harnessesCursor);
   const resolvedClaude = resolveClaudeHarnessConfig(harnessesClaude);
@@ -104,7 +106,7 @@ export function resolveWorkflowConfig(
 
   return {
     workflowPath: workflow.workflowPath,
-    promptTemplate: workflow.promptTemplate,
+    promptTemplate: serviceManagedPrompts ? "" : workflow.promptTemplate,
     tracker: {
       kind: trackerKind,
       endpoint:

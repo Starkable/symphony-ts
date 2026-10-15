@@ -127,14 +127,35 @@ export interface WorkflowArtifactStoreConfig {
   hydrateOnCreate: boolean;
 }
 
+export type WorkflowDomain = "analysis" | "implement";
+
+export type WorkflowGateKind =
+  | "schema_valid"
+  | "shell"
+  | "manual"
+  | "optional_output";
+
 export interface WorkflowPhaseConfig {
   id: string;
   skill: string;
+  /** V1.2 produces path; optional for V1.3 (uses artifacts layout). */
   produces: string;
   requiresPass: boolean;
+  /** V1.3: analysis (MCP) vs implement (sandbox). */
+  domain?: WorkflowDomain;
+  /** V1.3: upstream artifact logical names for prompt index. */
+  readsFrom?: string[];
+  /** V1.3: schema id e.g. review@v1 */
+  outputSchema?: string | null;
+  /** V1.3: deliverable logical filenames under artifacts/{change_ref}/ */
+  outputs?: string[];
+  /** V1.3: gate pipeline for stage completion */
+  gates?: WorkflowGateKind[];
+  /** V1.3: shell gate command (verify stage) */
+  shellCommand?: string | null;
 }
 
-/** V1.2 artifact-driven workflow table from WORKFLOW front matter. */
+/** Workflow table from WORKFLOW front matter (V1.2 artifact-driven or V1.3 run-state). */
 export interface SymphonyWorkflowConfig {
   version: string | null;
   changeRefStrategy: string | null;

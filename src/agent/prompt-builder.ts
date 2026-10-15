@@ -61,22 +61,39 @@ export interface WorkflowDispatchInjection {
   skill: string;
   producesPath: string;
   changeRef: string;
+  isV13?: boolean;
+  /** Pre-composed V1.3 section (when isV13). */
+  v13PromptSection?: string;
 }
 
 export interface BuildTurnPromptInput extends RenderPromptInput {
   turnNumber: number;
   maxTurns: number;
   workflowDispatch?: WorkflowDispatchInjection | null;
+  workflowUsesServicePrompts?: boolean;
 }
 
-export function getEffectivePromptTemplate(promptTemplate: string): string {
+export function getEffectivePromptTemplate(
+  promptTemplate: string,
+  options?: { workflowUsesServicePrompts?: boolean },
+): string {
+  if (options?.workflowUsesServicePrompts === true) {
+    return DEFAULT_WORKFLOW_PROMPT;
+  }
   const trimmed = promptTemplate.trim();
 
   return trimmed.length > 0 ? trimmed : DEFAULT_WORKFLOW_PROMPT;
 }
 
-export async function renderPrompt(input: RenderPromptInput): Promise<string> {
-  const template = getEffectivePromptTemplate(input.workflow.promptTemplate);
+export async function renderPrompt(
+  input: RenderPromptInput & { workflowUsesServicePrompts?: boolean },
+): Promise<string> {
+  const template = getEffectivePromptTemplate(
+    input.workflow.promptTemplate,
+    input.workflowUsesServicePrompts === true
+      ? { workflowUsesServicePrompts: true }
+      : undefined,
+  );
 
   try {
     const parsedTemplate = liquidEngine.parse(template);
@@ -98,7 +115,11 @@ export async function buildTurnPrompt(
 ): Promise<string> {
   const basePrompt =
     input.turnNumber <= 1
-      ? await renderPrompt(input)
+      ? await renderPrompt(
+          input.workflowUsesServicePrompts === true
+            ? { ...input, workflowUsesServicePrompts: true }
+            : input,
+        )
       : buildContinuationPrompt({
           issue: input.issue,
           attempt: input.attempt,
@@ -117,6 +138,10 @@ export function appendWorkflowDispatchSection(
   basePrompt: string,
   dispatch: WorkflowDispatchInjection,
 ): string {
+  if (dispatch.isV13 === true && dispatch.v13PromptSection !== undefined) {
+    return [basePrompt, "", dispatch.v13PromptSection].join("\n");
+  }
+
   const policySection = buildSymphonyPolicySection(dispatch.changeRef);
 
   if (dispatch.effectivePhaseId === "done") {

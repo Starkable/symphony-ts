@@ -91,6 +91,36 @@ hooks:
 # workflow — V1.2 artifact-driven phases (optional)
 # Omit for legacy prompt-only mode. See docs/symphony-agent-workflow.md
 # ============================================================
+# --- V1.3 (state-driven, no WORKFLOW body prompt) ---
+# Full guide: docs/symphony-agent-workflow-v1-3.md
+# Example: examples/workflow-v1-3-pms/WORKFLOW.md
+# Skills are installed globally on the Agent host; Symphony does not bundle skills in after_create.
+#
+# workflow:
+#   version: "1.3"
+#   change_ref: kebab_case_issue_id
+#   phases:
+#     - id: intake_review
+#       skill: stage-intake-review
+#       domain: analysis
+#       outputs: [review.json]
+#       gates: [schema_valid]
+#     - id: discover
+#       skill: stage-discover
+#       domain: analysis
+#       reads_from: [review.json]
+#       gates: [schema_valid]
+#     - id: implement
+#       skill: stage-implement
+#       domain: implement
+#       gates: [schema_valid]
+#     - id: verify
+#       skill: stage-verify
+#       domain: implement
+#       gates: [shell]
+#       shell_command: pnpm test
+#
+# --- V1.2 (artifact-derived phase, legacy prompt body allowed) ---
 # workflow:
 #   version: "1.2"
 #   change_ref: kebab_case_issue_id

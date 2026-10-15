@@ -52,7 +52,7 @@ import { PmsWritebackService } from "../tracker/pms/pms-writeback.js";
 import { createIssueTracker } from "../tracker/tracker-factory.js";
 import type { IssueTracker } from "../tracker/tracker.js";
 import { resolveChangeRef } from "../workflow/change-ref-path.js";
-import { deriveEffectivePhase } from "../workflow/derive-effective-phase.js";
+import { shouldReleaseOrchestratorClaimAfterWorker } from "../workflow/workflow-harness-stop.js";
 import { WorkspaceHookRunner } from "../workspace/hooks.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
 import type {
@@ -592,12 +592,11 @@ export class OrchestratorRuntimeHost implements DashboardServerHost {
       ).workspacePath;
       const workflow = this.config.workflow;
       if (workflow !== null && workflow.phases.length > 0) {
-        const derived = await deriveEffectivePhase({
+        workflowComplete = await shouldReleaseOrchestratorClaimAfterWorker({
           workspacePath,
-          changeRef: resolveChangeRef(runningEntry.identifier),
-          phases: workflow.phases,
+          issueIdentifier: runningEntry.identifier,
+          workflow,
         });
-        workflowComplete = derived.allComplete;
       }
     }
 
